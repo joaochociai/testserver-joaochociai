@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Cobrança - MedCof</title>
+
+    <link rel="icon" type="image/png" href="icon.png">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <img src="logo.png" alt="MedCof Logo" class="login-logo">
+            <h2>Acesso Restrito</h2>
+            <form id="login-form">
+                <input type="email" id="login-email" placeholder="E-mail corporativo" required>
+                <input type="password" id="login-password" placeholder="Senha" required>
+                <button type="submit" id="login-btn">ENTRAR NO SISTEMA</button>
+            </form>
+            <p id="login-message"></p>
+        </div>
+    </div>
+
+    <div id="app-content" style="display: none;">
+        
+        <div id="sidebar-menu">
+            <img src="logo.png" alt="Logo da Empresa" id="sidebar-logo">
+            
+            <div id="nav-menu">
+                <button id="btn-home" class="nav-tab" onclick="window.showTab('tab-home', this)">🏠 Início</button>
+
+                <button id="btn-dashboard" class="nav-tab admin-only" onclick="window.showTab('tab-dashboard', this)" style="background-color: #343a40; color: #ffc107;">📊 Dashboard</button>
+                
+                <button id="btn-dash-juridico" class="nav-tab admin-only" onclick="window.showTab('tab-dash-juridico', this)" style="background-color: #0d47a1; color: white;">⚖️ Dash Jurídico</button>
+
+                <div class="sector-group" data-sector="cobranca">
+                    <button class="nav-tab sector-btn" data-sector="cobranca" onclick="showTab('tab-escala', this)">📅 Escala Mensal</button>
+                </div>
+
+                <div class="menu-group sector-group" data-sector="cobranca">
+                    <div class="sector-title">COBRANÇA</div>
+                    <button class="menu-header" onclick="window.toggleMenu('menu-agendamentos')">
+                        🗓️ Agendamentos <span class="arrow">▼</span>
+                    </button>
+                    <div id="menu-agendamentos" class="menu-content">
+                        <button class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-agendamento', this)">Novo Agendamento</button>
+                        <button class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-calendario', this)">Calendário</button>
+                        <button id="btn-hist-cobranca" class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-lista-cobranca', this)">Histórico</button>
+                    </div>
+                </div>
+
+                <div class="menu-group sector-group" data-sector="cobranca">
+                    <button class="menu-header" onclick="window.toggleMenu('menu-ligacoes')">
+                        📞 Ligações <span class="arrow">▼</span>
+                    </button>
+                    <div id="menu-ligacoes" class="menu-content">
+                        <button class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-cobranca', this)">3ª Cobrança</button>
+                    </div>
+                </div>
+
+                <div class="menu-group sector-group" data-sector="juridico">
+                    <div class="sector-title">JURÍDICO</div>
+                    <button class="menu-header" onclick="window.toggleMenu('menu-juridico-ag')">
+                        ⚖️ Agendamentos <span class="arrow">▼</span>
+                    </button>
+                    <div id="menu-juridico-ag" class="menu-content">
+                        <button class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-novo', this)">Novo Agendamento</button>
+                        <button class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-calendario', this)">Calendário</button>
+                        <button id="btn-hist-juridico" class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-lista-juridico', this)">Histórico Jur.</button>                    
+                    </div>
+                </div>
+
+                <div class="menu-group sector-group" data-sector="juridico">
+                    <button class="menu-header" onclick="window.toggleMenu('menu-juridico-lig')">
+                        📞 Ligações <span class="arrow">▼</span>
+                    </button>
+                    <div id="menu-juridico-lig" class="menu-content">
+                        <button id="btn-juridico-ligacoes" class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-ligacoes', this)">1° Jurídica</button>
+                    </div>
+                </div>
+                
+                <button class="nav-tab logout-btn" onclick="window.logoutSystem()">🔒 Sair</button>
+            </div>
+        </div>
+        
+        <div id="main-content">
+            
+            <div id="tab-home" class="tab-content">
+                <div class="home-welcome-box">
+                    <img src="logo.png" alt="Logo" class="home-logo">
+                    <h1>Bem-vindo ao Sistema</h1>
+                    <p class="welcome-text">Selecione uma opção abaixo para começar.</p>
+                </div>
+
+                <div class="home-cards-container">
+                    
+                    <div class="home-sector-section sector-group" data-sector="cobranca">
+                        <h3 class="home-sector-title">Cobrança</h3>
+                        <div class="home-cards-grid">
+                            <div class="home-card" onclick="window.showTab('tab-agendamento', document.querySelector('[onclick*=\'tab-agendamento\']'))">
+                                <div class="icon">🗓️</div>
+                                <h3>Novo Agendamento</h3>
+                                <p>Agendar link de pagamento</p>
+                            </div>
+                            
+                            <div class="home-card" onclick="document.getElementById('btn-hist-cobranca').click()">
+                                <div class="icon">📂</div>
+                                <h3>Histórico</h3>
+                                <p>Consultar agendamentos</p>
+                            </div>
+
+                            <div class="home-card" onclick="window.showTab('tab-cobranca', document.querySelector('[onclick*=\'tab-cobranca\']'))">
+                                <div class="icon">📞</div>
+                                <h3>3ª Cobrança</h3>
+                                <p>Gestão de inadimplência</p>
+                            </div>
+
+                            <div class="home-card" onclick="window.showTab('tab-escala', document.querySelector('[onclick*=\'tab-escala\']'))">
+                                <div class="icon">📅</div>
+                                <h3>Escala Mensal</h3>
+                                <p>Gestão de equipe</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="home-sector-section sector-group" data-sector="juridico">
+                        <h3 class="home-sector-title" style="color: #6A1B9A;">Jurídico</h3>
+                        <div class="home-cards-grid">
+                            <div class="home-card" onclick="window.showTab('tab-juridico-novo', document.querySelector('[onclick*=\'tab-juridico-novo\']'))">
+                                <div class="icon">⚖️</div>
+                                <h3>Novo Agendamento</h3>
+                                <p>Agendar envio de link, chamar aluno...</p>
+                            </div>
+
+                            <div class="home-card" onclick="window.showTab('tab-juridico-calendario', document.querySelector('[onclick*=\'tab-juridico-calendario\']'))">
+                                <div class="icon">📆</div>
+                                <h3>Calendário</h3>
+                                <p>Panorama geral de agendamentos</p>
+                            </div>
+
+                            <div class="home-card" onclick="document.getElementById('btn-hist-juridico').click()">
+                                <div class="icon">🗂️</div>
+                                <h3>Histórico Jurídico</h3>
+                                <p>Consultar agendamentos</p>
+                            </div>
+
+                            <div class="home-card" onclick="window.showTab('tab-juridico-ligacoes', document.getElementById('btn-juridico-ligacoes'))">
+                                <div class="icon">📞</div>
+                                <h3>Ligações Jurídica</h3>
+                                <p>Gestão de ligações</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-dashboard" class="tab-content hidden">
+               <div class="dashboard-header-row">
+                    <h1>DASHBOARD GERENCIAL</h1>
+                    
+                    <div class="dash-controls-wrapper">
+                        <div class="date-filter-group">
+                            <span>📅 Filtro (Seções Específicas):</span>
+                            <input type="text" id="dash-date-start" placeholder="Início" autocomplete="off">
+                            <span>Até</span>
+                            <input type="text" id="dash-date-end" placeholder="Fim" autocomplete="off">
+                            <button onclick="window.applyDashboardFilters()">Filtrar</button>
+                            <button onclick="window.clearDashboardFilters()">Limpar</button>
+                        </div>
+
+                        <div class="dash-actions">
+                            <button class="action-btn admin-only" onclick="window.openImportBiModal()" style="background:#6f42c1; color:white; border:none;">
+                                📥 Importar Histórico
+                            </button>
+                            <span class="live-badge">● Ao Vivo</span>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="section-title">🌍 Panorama Geral de Cobrança</h2>
+
+                <div class="kpi-grid-powerbi">
+                    <div class="kpi-pbi-card"><div class="kpi-label">💲 Débito Total</div><div class="kpi-value" id="kpi-debito-total">R$ 0,00</div></div>
+                    <div class="kpi-pbi-card"><div class="kpi-label">✅ Pagamento Total</div><div class="kpi-value" id="kpi-pagamento-total">R$ 0,00</div></div>
+                    <div class="kpi-pbi-card"><div class="kpi-label">📉 % Conversão</div><div class="kpi-value" id="kpi-conversao">0%</div></div>
+                    <div class="kpi-pbi-card"><div class="kpi-label">📨 Disparos</div><div class="kpi-value" id="kpi-disparos">0</div></div>
+                </div>
+
+                <div class="charts-grid-row">
+                    <div class="chart-box big-chart">
+                        <h3>📊 Status da Carteira (Por Etapa)</h3>
+                        <div id="chart-bar-status"></div>
+                    </div>
+                    <div class="chart-box small-chart">
+                        <h3>🎯 Meta Geral</h3>
+                        <div id="chart-gauge-meta"></div>
+                        <p class="meta-text" id="meta-text-display">-</p>
+                    </div>
+                </div>
+
+                <div class="charts-grid-row">
+                    <div class="chart-box big-chart">
+                        <h3>💲 Comparativo MoM (% Recuperação)</h3>
+                        <div id="chart-line-mom"></div>
+                    </div>
+                    <div class="chart-box small-chart">
+                        <h3>💳 Formas de Pagamento (Geral)</h3>
+                        <div id="chart-pie-payment"></div>
+                    </div>
+                </div>
+
+                <div class="chart-box full-width-chart" style="margin-top: 30px; margin-bottom: 40px;">
+                    <h3>📈 Evolução de Débitos x Pagamentos (Histórico Completo)</h3>
+                    <div id="chart-bar-evolution"></div>
+                </div>
+
+                <h2 class="section-title" style="border-left-color: #d35400; color: #4b4b4b;">📞 3ª Cobrança</h2>
+
+                <div class="kpi-grid-powerbi">
+                    <div class="kpi-pbi-card" style="border-left-color: #d35400;"><div class="kpi-label">💲 Débitos (3ª Cob)</div><div class="kpi-value" id="kpi-3cob-debito">R$ 0,00</div></div>
+                    <div class="kpi-pbi-card" style="border-left-color: #e67e22;"><div class="kpi-label">✅ Pagos (3ª Cob)</div><div class="kpi-value" id="kpi-3cob-pago">R$ 0,00</div></div>
+                    <div class="kpi-pbi-card" style="border-left-color: #f39c12;"><div class="kpi-label">📉 % Conv. (3ª Cob)</div><div class="kpi-value" id="kpi-3cob-conv">0%</div></div>
+                    <div class="kpi-pbi-card" style="border-left-color: #34495e;"><div class="kpi-label">📨 Disparos (3ª Cob)</div><div class="kpi-value" id="kpi-3cob-disparos">0</div></div>
+                </div>
+
+                <div class="charts-grid-row">
+                    <div class="chart-box big-chart">
+                        <h3>📈 Evolução da Taxa de Conversão (3ª Cob)</h3>
+                        <div id="chart-3cob-evolution-line"></div>
+                    </div>
+                    <div class="chart-box small-chart">
+                        <h3>⚖️ Débitos x Pagamentos</h3>
+                        <div id="chart-3cob-pie"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-dash-juridico" class="tab-content hidden">
+                <div class="dashboard-header" style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2 style="margin:0; font-size:24px;">Dashboard Jurídico</h2>
+                            <p style="margin:0; opacity:0.8;">Indicadores de Performance e Recuperação</p>
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <input type="date" id="dash-jur-start" class="date-filter" style="border:none;">
+                            <span style="font-weight:bold;">até</span>
+                            <input type="date" id="dash-jur-end" class="date-filter" style="border:none;">
+                            <button onclick="window.loadJuridicoDashboard()" style="background:white; color:#0d47a1; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; font-weight:bold;">Filtrar</button>
+                            <button onclick="window.openImportDashJuridico()" style="background:#ffca28; color:#333; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; font-weight:bold; margin-left:10px;">📥 Importar Dados</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="kpi-grid" id="juridico-kpi-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                    </div>
+
+                <div class="charts-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+                        <h3 style="color:#0d47a1; margin-bottom:15px;">Retorno dos Disparos</h3>
+                        <canvas id="chart-jur-funil"></canvas>
+                    </div>
+
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+                        <h3 style="color:#0d47a1; margin-bottom:15px;">Comparativo de Recuperação (Mês Anterior)</h3>
+                        <canvas id="chart-jur-recuperacao"></canvas>
+                    </div>
+
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+                        <h3 style="color:#0d47a1; margin-bottom:15px;">Histórico de Disparos (Últimos 12 meses)</h3>
+                        <canvas id="chart-jur-historico"></canvas>
+                    </div>
+
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+                        <h3 style="color:#0d47a1; margin-bottom:15px;">Comparativo Anual (Disparos, Débitos, Pagos)</h3>
+                        <canvas id="chart-jur-anual"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-agendamento" class="tab-content hidden">
+                <h1>AGENDAMENTO DE LINK</h1>
+                <div class="form-container">
+                    <form id="link-schedule-form" class="professional-form">
+                        <input name="Nome" type="text" placeholder="Nome Completo do Aluno" required autocomplete="off">
+                        <input name="Email" type="email" placeholder="E-mail do Aluno" required autocomplete="off">
+                        <input name="Curso" type="text" placeholder="Nome do Curso" required autocomplete="off">
+                        <input name="Telefone" type="tel" placeholder="Telefone com DDD" required autocomplete="off">
+                        
+                        <label>Motivo do Link:</label>
+                        <select name="Motivo" required>
+                            <option value="" disabled selected>Selecione o motivo</option>
+                            <option value="Link de pagamento Mercury">Link de pagamento Mercury</option>
+                            <option value="Renegociação Mercury">Renegociação Mercury</option>
+                            <option value="Link de pagamento GURU">Link de pagamento GURU</option>
+                            <option value="Cancelamento">Cancelamento</option>
+                            <option value="Parcelas vencidas somadas">Parcelas vencidas somadas</option>
+                        </select>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <input name="QtdParcelas" type="number" placeholder="Qtd. Parcelas" min="1" required autocomplete="off">
+                            <input name="ValorParcela" type="text" placeholder="Valor Parcela (R$)" required autocomplete="off">
+                        </div>
+                        
+                        <label>Data de Vencimento:</label>
+                        <input name="DataVencimento" id="datepicker-vencimento" type="text" placeholder="Selecione a data" required autocomplete="off">
+                        
+                        <label>Data para Gerar Link:</label>
+                        <input name="DataGerarLink" id="datepicker-gerar" type="text" placeholder="Selecione a data" required autocomplete="off">
+                        
+                        <label>Observação:</label>
+                        <textarea name="Observacao" placeholder="Detalhes adicionais..." rows="3"></textarea>
+                            
+                        <button type="submit">SALVAR AGENDAMENTO</button>
+                        <p id="form-message"></p>
+                    </form>
+                </div>
+            </div>
+
+            <div id="tab-calendario" class="tab-content hidden">
+                <h1>CALENDÁRIO COBRANÇA</h1>
+                <div class="calendar-controls-wrapper">
+                    <button class="cobranca-btn-small" onclick="window.changeMonth(-1, 'cobranca')">&lt; Anterior</button>
+                    <span id="currentMonthDisplay" class="currentMonthDisplay"></span> 
+                    <button class="cobranca-btn-small" onclick="window.changeMonth(1, 'cobranca')">Próximo &gt;</button>
+                </div>
+                <div id="calendar-view"></div>
+            </div>
+
+            <div id="tab-lista-cobranca" class="tab-content hidden">
+                <h1>HISTÓRICO DE AGENDAMENTOS</h1>
+                <div class="filters-container">
+                    <div class="search-box">
+                        <input type="text" id="search-cobranca" placeholder="🔍 Buscar aluno, curso..." onkeyup="window.filterCobrancaHistory()">
+                    </div>
+                    <div class="date-filters">
+                        <input type="text" id="filter-start-cobranca" placeholder="Data Inicial" autocomplete="off">
+                        <input type="text" id="filter-end-cobranca" placeholder="Data Final" autocomplete="off">
+                    </div>
+                    <button class="clean-filter-btn" onclick="window.clearCobrancaFilters()">Limpar</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" onclick="window.sortCobranca('DataGerarLink')">Gerar Link ▼</th>
+                                <th class="sortable" onclick="window.sortCobranca('Nome')">Aluno ↕</th>
+                                <th class="sortable" onclick="window.sortCobranca('Curso')">Curso ↕</th>
+                                <th class="sortable" onclick="window.sortCobranca('ValorParcela')">Valor ↕</th>
+                                <th class="sortable" onclick="window.sortCobranca('DataVencimento')">Vencimento ↕</th>
+                                <th style="text-align: center;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body-cobranca"></tbody>
+                    </table>
+                    <p id="no-results-cobranca" style="display: none; text-align: center; margin-top: 20px; color: #666;">Nenhum agendamento encontrado.</p>
+                </div>
+            </div>
+
+            <div id="tab-cobranca" class="tab-content hidden">
+                <h1>CONTROLE 3ª COBRANÇA</h1>
+                <div class="filters-container">
+                    <div class="kpi-box"><span id="total-active-count">0</span><small>Ativos</small></div>
+                    <div class="search-box">
+                        <input type="text" id="cobranca-search" placeholder="🔍 Buscar aluno..." onkeyup="window.filterCobranca()">
+                    </div>
+                    <button class="import-btn admin-only" onclick="window.openImportModal()">📥 Imp.</button>
+                    <button class="action-btn secondary admin-only" onclick="window.exportActiveCobranca()" >📤 Lig.</button>
+                    <button class="action-btn secondary" onclick="window.exportNoAnswerStudents()" >📵 Temp.</button>
+                    <button class="action-btn admin-only" onclick="window.openPaymentsModal()" style="background-color: #198754; color: white; border-color: #198754; margin-right: 10px;">💲 Pags.</button>
+                </div>
+                <div id="cobranca-list" class="cards-container"></div>
+            </div>
+
+            <!-- ABA: JURÍDICO — NOVO AGENDAMENTO -->
+            <div id="tab-juridico-novo" class="tab-content hidden">
+                <h1 class="juridico-title">JURÍDICO – NOVO AGENDAMENTO</h1>
+
+                <div class="form-container juridico-border">
+                    <form id="juridico-form" class="professional-form">
+                        
+                        <input name="Nome" type="text" placeholder="Nome do Aluno*" required autocomplete="off">
+                        <input name="Email" type="email" placeholder="E-mail*" required autocomplete="off">
+                        <input name="Telefone" type="tel" placeholder="Telefone" autocomplete="off">
+
+                        <label>Data para Ação:</label>
+                        <input name="DataAcao" id="datepicker-juridico" type="text" placeholder="Selecione a data*" required autocomplete="off">
+
+                        <label>Ação:</label>
+                        <select name="Ação" required>
+                            <option value="" disabled selected>Selecione o motivo*</option>
+                            <option value="Link de pagamento Mercury">Link de pagamento Mercury</option>
+                            <option value="Renegociação Mercury">Renegociação Mercury</option>
+                            <option value="Link de pagamento GURU">Link de pagamento GURU</option>
+                            <option value="Renegociação GURU">Renegociação GURU</option>
+                            <option value="Cancelamento">Cancelamento</option>
+                            <option value="Olhar se pagou">Olhar se pagou</option>
+                            <option value="Chamar no chat">Chamar no chat</option>
+                        </select>
+                        
+                        <div style="display: flex; gap: 10px;">
+                            <input name="QtdParcelas" type="number" placeholder="Qtd. Parcelas" min="1" autocomplete="off">
+                            <input name="ValorParcela" type="text" placeholder="Valor Parcela (R$)" autocomplete="off">
+                        </div>
+
+                        <label>Observações:</label>
+                        <textarea 
+                            name="Observacao"
+                            placeholder="Detalhes do processo..."
+                            rows="4"
+                        ></textarea>
+
+                        <button type="submit" class="juridico-btn">SALVAR AGENDAMENTO</button>
+
+                        <p id="juridico-message"
+                            style="text-align:center; margin-top:12px; font-weight:bold;">
+                        </p>
+                    </form>
+                </div>
+            </div>
+
+            <!-- ABA: JURÍDICO – CALENDÁRIO -->
+            <div id="tab-juridico-calendario" class="tab-content hidden">
+                <h1 class="juridico-title">CALENDÁRIO JURÍDICO</h1>
+
+                <div class="calendar-controls-wrapper">
+                    <button class="juridico-btn-small" onclick="window.changeJuridicoMonth(-1)">&lt; Anterior</button>
+                    <span id="juridicoMonthDisplay" class="juridico-month-label"></span>
+                    <button class="juridico-btn-small" onclick="window.changeJuridicoMonth(1)">Próximo &gt;</button>
+                </div>
+
+                <div id="juridico-calendar-view"></div>
+            </div>
+
+            <div id="tab-lista-juridico" class="tab-content hidden">
+                <h1 class="juridico-title">HISTÓRICO JURÍDICO</h1> <div class="filters-container juridico-border"> <div class="search-box">
+                        <input type="text" id="search-juridico" placeholder="🔍 Buscar nome, e-mail, ação..." onkeyup="window.filterJuridicoHistory()">
+                    </div>
+                    <div class="date-filters">
+                        <input type="text" id="filter-start-juridico" placeholder="Data Inicial" autocomplete="off">
+                        <input type="text" id="filter-end-juridico" placeholder="Data Final" autocomplete="off">
+                    </div>
+                    <button class="clean-filter-btn" onclick="window.clearJuridicoFilters()">Limpar</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table">
+                        <thead>
+                            <tr style="background-color: #6A1B9A;"> <th>Data Ação</th>
+                                <th>Nome</th>
+                                <th>E-mail</th>
+                                <th>Ação Necessária</th>
+                                <th>Criado Em</th>
+                                <th style="text-align: center;">Detalhes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body-juridico"></tbody>
+                    </table>
+                    <p id="no-results-juridico" style="display: none; text-align: center; margin-top: 20px; color: #666;">Nenhum processo encontrado.</p>
+                </div>
+            </div>
+
+            <!-- ============================
+                JURÍDICO — LIGAÇÕES (ABAS)
+            ============================= -->
+            <div id="tab-juridico-ligacoes" class="tab-content hidden">
+            <h1 class="juridico-title">LIGAÇÕES — JURÍDICO</h1>
+
+            <div class="filters-container">
+                <div class="kpi-box">
+                <span id="total-juridico-count">0</span>
+                <small>Ativos</small>
+                </div>
+
+                <div class="search-box">
+                <input type="text" id="juridico-ligacoes-search" placeholder="🔍 Buscar..." onkeyup="window.filterJuridicoList()">
+                </div>
+
+                <button class="import-btn admin-only" onclick="window.openImportModalJuridico()">📥 Importar</button>
+            </div>
+
+            <div id="juridico-ligacoes-list" class="cards-container"></div>
+            </div>
+
+            <!-- IMPORTAR JURÍDICO (modal específico) -->
+            <div id="import-modal-juridico" class="modal-hidden">
+            <div id="import-modal-box">
+                <h2>Importar Ligações Jurídicas</h2>
+                <p class="instruction">
+                Cole do Excel/Sheets sem cabeçalho.<br>
+                <strong>Ordem:</strong> Curso | Nome | Email | CPF | Telefone | ValorParcela | TotalAberto | Vencimento | Data1Jur
+                </p>
+
+                <textarea id="import-data-juridico" placeholder="Cole os dados aqui..."></textarea>
+
+                <div class="modal-actions">
+                <button class="cancel-btn" onclick="window.closeImportModalJuridico()">Cancelar</button>
+                <button class="confirm-btn" onclick="window.processImportJuridico()">Processar</button>
+                </div>
+            </div>
+            </div>
+
+            <!-- MODAL EXCLUSIVO: AÇÕES JURÍDICO -->
+            <div id="actions-modal-juridico" class="modal-hidden">
+            <div id="actions-modal-juridico-box">
+                <div class="actions-header-juridico">
+                <h2 id="juridico-actions-student-name">Nome / Processo</h2>
+                <button class="close-btn" onclick="window.closeActionsModalJuridico()">✖</button>
+                </div>
+
+                <div class="actions-body-juridico">
+                <div class="actions-col-main-juridico">
+                    <div id="juridico-actions-student-details" class="details-panel"></div>
+
+                    <label for="juridico-extra-status-select"><strong>Status Extra:</strong></label>
+                    <select id="juridico-extra-status-select" onchange="window.saveExtraStatusJuridico()">
+                    <option value="">Nenhum</option>
+                    <option value="link_enviado">Link enviado</option>
+                    <option value="link_agendado">Link agendado</option>
+                    <option value="em_negociacao">Em negociação</option>
+                    </select>
+
+                    <div class="sequence-panel-juridico">
+                    <button id="juridico-btn-next-call" class="action-step-btn-large" onclick="window.nextCallStageJuridico()">📞 Ligar</button>
+                    <button id="juridico-btn-next-template" class="action-step-btn-large" onclick="window.nextTemplateStageJuridico()">💬 Template</button>
+                    <p id="juridico-last-action-info" class="info-text"></p>
+                    </div>
+
+                    <div class="payment-panel-juridico">
+                    <h3>Registrar Pagamento</h3>
+                    <div class="payment-controls">
+                        <input type="date" id="juridico-payment-date">
+                        <select id="juridico-payment-origin">
+                        <option value="" disabled selected>Origem</option>
+                        <option value="Pagamento normal">Pagamento normal</option>
+                        <option value="Atendimento">Atendimento</option>
+                        <option value="Ligação">Ligação</option>
+                        <option value="Supervisão">Supervisão</option>
+                        </select>
+                        <button class="save-payment-btn" onclick="window.registerPaymentJuridico()">Baixar</button>
+                    </div>
+                    </div>
+
+                </div>
+
+                <div class="actions-col-proposals-juridico">
+                    <h3>Propostas / Notas</h3>
+                    <div class="proposal-item"><label>Proposta 1:</label><textarea id="jur-prop-1" onblur="window.saveProposalJuridico(1)"></textarea></div>
+                    <div class="proposal-item"><label>Proposta 2:</label><textarea id="jur-prop-2" onblur="window.saveProposalJuridico(2)"></textarea></div>
+                    <div class="proposal-item"><label>Proposta 3:</label><textarea id="jur-prop-3" onblur="window.saveProposalJuridico(3)"></textarea></div>
+                    <div class="proposal-item"><label>Observações:</label><textarea id="jur-prop-4" onblur="window.saveProposalJuridico(4)"></textarea></div>
+                </div>
+                </div>
+            </div>
+            </div>
+
+            <div id="tab-escala" class="tab-content hidden">
+                <h1>ESCALA MENSAL DE COBRANÇA</h1>
+
+                <!-- Botão para abrir modo edição -->
+                <button id="btn-open-editor"
+                    class="action-btn-edit admin-only"
+                    onclick="window.openEscalaEditor()"
+                    style="margin: 20px 0; padding: 10px 20px; background:#f4b100; border-radius:8px; border:none; cursor:pointer;">
+                    ✏️ Editar Escala
+                </button>
+
+                <!-- ÁREA DE EDIÇÃO (sidebar + tabela) -->
+                <div id="escala-editor-wrapper" style="display:none;">
+
+                    <button id="btn-close-editor"
+                        onclick="window.closeEscalaEditor()"
+                        style="margin-bottom: 20px; padding: 10px 20px; background:#bbb; border-radius:8px; border:none; cursor:pointer;">
+                        ← Voltar à Visualização
+                    </button>
+
+                    <div class="escala-wrapper">
+
+                        <aside class="escala-sidebar">
+                            <div class="card equipe-card">
+                                <h3>👥 Equipe</h3>
+                                <div id="employees-list" style="max-height: 400px; overflow-y: auto; margin-top: 10px;"></div>
+                            </div>
+                        </aside>
+
+                        <div class="escala-main-area">
+                            <div class="escala-controls">
+                                <button id="prev-month" onclick="window.changeEscalaMonth(-1)">◀</button>
+                                <span id="escala-month-label" class="month-label"></span>
+                                <button id="next-month" onclick="window.changeEscalaMonth(1)">▶</button>
+
+                                <div class="separator"></div>
+                                <button onclick="window.openHolidayConfigurator()" style="background-color: #9b59b6; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">📅 Feriados</button>
+                                <button onclick="window.openVacationConfigurator()" style="background-color: #e67e22; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">🏖️ Marcar Férias</button>
+                                <button onclick="window.openCycleConfigurator()" style="background-color: #5dade2; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">⚙️ Configurar Ciclos</button>        
+                                <button onclick="window.autoFillCycle()" style="background-color: #27ae60; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">✨ Auto Ciclo (Geral)</button>
+                            </div>
+
+                            <div id="escala-message" style="margin: 10px 0; font-weight: bold; min-height: 20px;"></div>
+
+                            <!-- AQUI A TABELA É RENDERIZADA -->
+                            <div id="escala-container" class="escala-table-wrapper"></div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VISUALIZAÇÃO (somente leitura) -->
+                <div id="escala-view-container">
+                    <div id="escala-view-content"></div> 
+                </div>
+                <div id="escala-editor-wrapper" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-overlay" class="modal-hidden">
+        <div id="modal-box">
+            <h2 id="modal-title">Aviso</h2>
+            <p id="modal-message"></p>
+            <button id="modal-close-btn" onclick="window.closeCustomAlert()">Fechar</button>
+        </div>
+    </div>
+
+    <div id="details-modal-overlay" class="modal-hidden">
+        <div id="details-modal-box">
+            <div id="details-modal-header">
+                <h2 id="details-modal-title">Detalhes</h2>
+                <button id="copy-details-btn" onclick="window.copyAppointmentFormatted()">Copiar</button>
+            </div>
+            <div id="details-modal-content"></div>
+            <button id="details-modal-close-btn" onclick="window.closeDetailsModal()">Fechar</button>
+        </div>
+    </div>
+    
+    <div id="actions-modal-overlay" class="modal-hidden">
+        <div id="actions-modal-box">
+            <div class="actions-header">
+                <h2 id="actions-student-name">Nome do Aluno</h2>
+                <button class="close-btn" onclick="window.closeActionsModal()">✖</button>
+            </div>
+            <div class="actions-body">
+                <div class="actions-col-main">
+                    <div id="actions-student-details" class="details-panel"></div>
+                    <label><strong>Status Extra:</strong></label>
+                    <select id="extra-status-select" class="swal2-input" onchange="window.saveExtraStatus()">
+                        <option value="">-- Remover Status --</option>
+                        <option value="Link enviado">Link enviado</option>
+                        <option value="Link agendado">Link Agendado</option>
+                        <option value="Em negociação">Em negociação</option>
+                        <option value="Jurídica">Jurídica</option>
+                    </select>
+                    <div class="sequence-panel">
+                        <div style="display: flex; gap: 10px; width: 100%;">
+                            <button id="btn-next-call" class="action-step-btn-large seq-call" onclick="window.nextCallStage()">
+                                📞 Ligar
+                            </button>
+                            <button id="btn-next-template" class="action-step-btn-large seq-msg" onclick="window.nextTemplateStage()">
+                                💬 Template
+                            </button>
+                        </div>
+                        <p id="last-action-info" class="info-text" style="margin-top: 10px; font-size: 12px; color: #666;"></p>
+                    </div>
+                    <div class="payment-panel">
+                        <h3>Registrar Pagamento</h3>
+                        <div class="payment-controls">
+                            <input type="date" id="payment-date">
+                            <select id="payment-origin">
+                                <option value="" disabled selected>Origem</option>
+                                <option value="Pagamento normal">Pagamento normal</option>
+                                <option value="Atendimento">Atendimento</option>
+                                <option value="Ligação">Ligação</option>
+                                <option value="Supervisão">Supervisão</option>
+                            </select>
+                            <button class="save-payment-btn" onclick="window.registerPayment()">Baixar</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="actions-col-proposals">
+                    <h3>Propostas</h3>
+                    <div class="proposal-item"><label>Proposta 1:</label><textarea id="prop-1" onblur="window.saveProposal(1)"></textarea></div>
+                    <div class="proposal-item"><label>Proposta 2:</label><textarea id="prop-2" onblur="window.saveProposal(2)"></textarea></div>
+                    <div class="proposal-item"><label>Proposta 3:</label><textarea id="prop-3" onblur="window.saveProposal(3)"></textarea></div>
+                    <div class="proposal-item"><label>Observações:</label><textarea id="prop-4" onblur="window.saveProposal(4)"></textarea></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-import-dash-juridico" class="modal-overlay modal-hidden">
+        <div class="modal-content" style="max-width: 500px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+            <h3 style="color:#0d47a1; margin-top:0;">Importar Dados (Dashboard Jurídico)</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:10px;">
+                Cole as colunas na ordem:<br>
+                Data | Disparos | Débitos | Interações | Neg. Info | Acordos Info | Pagamentos | Neg. Email | Acordos Email | Cancel. | Rec. Perdida | Termos
+            </p>
+            <textarea id="import-dash-juridico-text" rows="10" placeholder="Cole os dados do Excel aqui..." style="width:100%; padding:10px; border:1px solid #ddd; border-radius:5px;"></textarea>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px;">
+                <button onclick="document.getElementById('modal-import-dash-juridico').classList.add('modal-hidden')" style="padding: 8px 15px; cursor: pointer; background: #ccc; border: none; border-radius: 5px;">Cancelar</button>
+                <button onclick="window.processImportDashJuridico()" style="background:#0d47a1; color:white; border:none; padding:8px 20px; border-radius:5px; cursor: pointer;">Processar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="import-modal-overlay" class="modal-hidden">
+        <div id="import-modal-box">
+            <h2>Importar Alunos (3ª Cobrança)</h2>
+            <p class="instruction">Copie do Excel e cole abaixo (Sem cabeçalho).<br>
+            <strong>Ordem:</strong> Nome | Email | CPF | Telefone | Curso | FormaPag | Valor | Vencimento | Data 3ª Cob | Data 1ª Jur</p>
+            <textarea id="import-data" placeholder="Cole os dados aqui..."></textarea>
+            <div class="modal-actions">
+                <button class="cancel-btn" onclick="window.closeImportModal()">Cancelar</button>
+                <button class="confirm-btn" onclick="window.processImport()">Processar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="payments-modal-overlay" class="modal-hidden">
+        <div id="payments-modal-box">
+            <div class="actions-header" style="background-color: #198754;">
+                <h2 style="color:white; margin:0;">💰 Relatório de Pagamentos</h2>
+                <button class="close-btn" onclick="window.closePaymentsModal()" style="color:white;">✖</button>
+            </div>
+            
+            <div class="payments-content" style="padding: 20px; overflow-y: auto; max-height: 80vh;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <div>
+                        <p style="color:#666; margin:0 0 10px 0;">Lista de todos os alunos baixados como "Pago".</p>
+                        <button class="action-btn" onclick="window.exportPaymentsExcel()" style="background-color:#198754; color:white; border:none; padding:8px 15px; border-radius:6px; font-weight:bold; cursor:pointer;">
+                            📊 Exportar Excel
+                        </button>
+                    </div>
+
+                    <div class="kpi-box" style="background:#198754;">
+                        <span id="total-payments-count">0</span>
+                        <small>Total Baixado</small>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="styled-table">
+                        <thead>
+                            <tr style="background-color: #198754;">
+                                <th>Data Baixa</th>
+                                <th>Aluno</th>
+                                <th>Valor</th>
+                                <th>Origem</th>
+                                <th>Baixado Por</th>
+                            </tr>
+                        </thead>
+                        <tbody id="payments-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="import-bi-modal" class="modal-hidden">
+    <div id="import-modal-box" style="max-width: 700px;">
+        <h2 style="color: #6f42c1;">Importar Histórico (Planilha)</h2>
+        <p class="instruction">
+            Copie as colunas da sua planilha e cole abaixo.<br>
+            <strong>Ordem esperada:</strong> Etapa | Data | Disparos | Débitos | Pagamento
+        </p>
+        <p style="font-size:12px; color:#666;">
+            *Isso alimentará os gráficos de Disparos, Débito Total e Comparativo.
+        </p>
+        
+        <textarea id="import-bi-data" placeholder="Cole aqui (Ctrl+V)..." style="height: 200px;"></textarea>
+        
+        <div class="modal-actions">
+            <button class="cancel-btn" onclick="document.getElementById('import-bi-modal').classList.add('modal-hidden')">Cancelar</button>
+            <button class="confirm-btn" onclick="window.processImportBi()">Processar Dados</button>
+        </div>
+    </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
