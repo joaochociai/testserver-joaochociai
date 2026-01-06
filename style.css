@@ -95,25 +95,17 @@ h1 {
    3. BARRA LATERAL (SIDEBAR)
    ========================================= */
 #sidebar-menu {
-    width: 240px; 
-    background-color: #ffffff; 
-    color: var(--text-main); 
-    padding: 30px 10px;
-    
-    /* Design Arredondado e Sombra Suave */
-    box-shadow: 4px 0 15px rgba(0, 0, 0, 0.05); 
-    border-right: 1px solid #f0f0f0;
-    border-top-right-radius: 25px;
-    border-bottom-right-radius: 25px;
-
-    position: fixed; 
-    top: 0; bottom: 0; left: 0; 
-    z-index: 100;
-    
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    overflow-y: auto;
+    display: flex;       /* Ativa o modo Flexbox */
+    flex-direction: column; /* Organiza itens um embaixo do outro */
+    height: 100vh;       /* Ocupa 100% da altura da tela */
+    width: 250px;        /* Largura da sidebar (ajuste se precisar) */
+    position: fixed;     /* Fixa na esquerda */
+    left: 0;
+    top: 0;
+    background-color: #fff; /* Cor de fundo */
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* Sombra lateral */
+    z-index: 1000;
+    overflow: hidden;    /* Impede scroll na barra inteira */
 }
 
 .sidebar-top {
@@ -124,59 +116,78 @@ h1 {
 }
 
 
-#sidebar-logo { width: 160px; 
+#sidebar-logo { 
+    max-width: 80%;
     height: auto; 
     display: block; 
     margin: 0 auto 40px auto; }
 
 /* Menu de Navegação */
-#nav-menu { width: 100%; display: flex; flex-direction: column; gap: 12px; margin-bottom: 30px; }
-
-.nav-tab {
-    display: block; 
-    width: 100%; 
-    text-align: left;
-    background-color: transparent; 
-    color: var(--text-muted); 
-    padding: 10px 15px; 
-    margin: 0;
-    border: none; 
-    cursor: pointer; 
-    font-size: 14px; 
+#nav-menu {
+    flex: 1;             
+    overflow-y: auto;    
+    padding: 10px 0;     
+    
+    /* Estilização da barra de rolagem (Fica mais bonito) */
+    scrollbar-width: thin;
+    scrollbar-color: #ccc transparent;
+}
+.nav-tab.admin-only {
+    background-color: #fff;
+    border: 0px solid #eee; /* Uma borda sutil para destacar */
     font-weight: 500;
-    border-radius: 6px; 
-    transition: all 0.2s ease-in-out;
-    border-left: 3px solid transparent; 
+}
+
+.nav-tab.admin-only:hover {
+    background-color: #f8f9fa;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.nav-tab, .menu-header {
+    width: 100%;
+    padding: 12px 15px; /* Um pouco mais de preenchimento */
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 10px; /* Espaço entre ícone e texto */
+    border-radius: 6px; /* Bordas arredondadas */
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
+}
+.nav-tab:hover, .menu-header:hover {
+    background-color: #f0f2f5; /* Cinza claro no hover */
+    color: #000;
 }
 .nav-tab.active {
-    background-color: #f0f8ff; 
-    color: var(--primary-blue); 
-    font-weight: 700;
-    border-left: 3px solid var(--primary-blue);
+    background-color: #e7f1ff;
+    color: #007bff;
+    font-weight: 600;
 }
-
+.sector-group {
+    margin-bottom: 8px;
+}
 .nav-tab:hover:not(.active) { 
     background-color: var(--bg-body); 
     color: var(--text-main); 
 }
 
 /* Botão Sair */
-.logout-btn {
-    margin-top: auto !important; 
-    position: absolute;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 80% !important;
-    padding: 12px !important;
-    color: var(--danger-red) !important;
-    background-color: #fff5f5 !important;
-    border: 1px solid #ffc9c9 !important;
-    border-radius: 12px !important;
-    font-weight: 700 !important;
-    text-align: center !important;
-    display: flex !important; justify-content: center; align-items: center;
+.sidebar-footer {
+    flex-shrink: 0;      /* Não encolhe */
+    padding: 15px;
+    background-color: #f8f9fa; /* Um fundo levemente diferente destaca o botão */
+    border-top: 1px solid #eee;
 }
+
+.logout-btn {
+    width: 100%;
+    margin: 0;
+}
+
 .logout-btn:hover {
     background-color: var(--danger-red) !important;
     color: white !important;
@@ -212,7 +223,6 @@ h1 {
 .tab-content { margin: 0 auto; width: 100%;  max-width: 900px;; display: flex; flex-direction: column; align-items: center; }
 .hidden { display: none !important; }
 
-
 /* =========================================
    7. FORMULÁRIO DE AGENDAMENTO
    ========================================= */
@@ -245,6 +255,10 @@ h1 {
 .professional-form button[type="submit"]:hover { background-color: var(--primary-blue-hover); transform: translateY(-1px); }
 #form-message { font-size: 15px; font-weight: 600; text-align: center; margin-top: 15px; }
 .flatpickr-input { background-color: #fff !important; cursor: pointer !important; }
+#abs-start{z-index: 99999 !important;}
+.flatpickr-calendar {
+    z-index: 9999999 !important;
+}
 
 
 /* =========================================
@@ -833,7 +847,7 @@ h1 {
 /* Propostas */
 .proposal-item { margin-bottom: 10px; }
 .proposal-item label { font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px; }
-.proposal-item textarea { width: 95%; height: 75px; padding: 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+.proposal-item textarea { width: 95%; height: 100px; padding: 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
 
 /* Botão único no Card da Lista */
 .btn-actions-open {
@@ -1091,340 +1105,441 @@ body.is-admin div.admin-only {
 }
 
 #tab-escala {
-    max-width: 98% !important; 
-    align-items: flex-start !important; 
-    padding: 0 10px;
-}
-/* =========================================
-   10. LAYOUT DE ESCALA (ESTILO DARK & WIDE)
-   ========================================= */
-
-/* Wrapper Principal */
-.escala-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 20px;
     display: flex;
-    gap: 20px;
+    flex-direction: column;
+    align-items: center; /* Mantém o cabeçalho e o card de mês centralizados no topo */
+    box-sizing: border-box;
+}
+
+/* ==============================================================
+   DESIGN ENTERPRISE - ESCALA MENSAL MEDCOF (FINAL & LIMPO)
+   ============================================================== */
+
+/* --- 1. ESTRUTURA E LAYOUT DO EDITOR --- */
+.escala-editor-layout {
+    display: flex;
+    gap: 0; /* Remove o gap fixo para a transição ser fluída */
     align-items: flex-start;
     width: 100%;
-    margin-top: 10px;
+    transition: all 0.3s ease;
+    margin-top: 20px;
 }
 
-/* --- SIDEBAR (EQUIPE) --- */
 .escala-sidebar {
-    min-width: 240px;
+    width: 280px;
     background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    border: 1px solid #e0e0e0;
-    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
+    padding: 20px;
     position: sticky;
     top: 20px;
-    max-height: calc(100vh - 40px);
+    max-height: calc(100vh - 60px);
     overflow-y: auto;
+    flex-shrink: 0;
+    margin-right: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Estado Recolhido (Libera 100% do espaço para a escala) */
+.escala-sidebar.collapsed {
+    width: 0;
+    margin-right: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+    border: none;
+    display: none !important; /* Força a saída do fluxo do layout */
+}
+
+.escala-main-content {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
 }
 
-.sidebar-header {
-    border-bottom: 2px solid #f0f0f0;
-    margin-bottom: 15px;
-    padding-bottom: 10px;
+/* --- 2. BARRA DE FERRAMENTAS REFINADA (TOOLBAR) --- */
+.drawer-header-escala {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+    padding: 12px 20px;
+    border-bottom: 2px solid #e2e8f0;
+    border-radius: 12px 12px 0 0;
 }
 
-.sidebar-header h3 {
-    margin: 0; font-size: 16px; color: #333; font-weight: 700;
-}
-
-.instruction-text { font-size: 12px; color: #777; margin-top: 5px; }
-
-/* Input de Adicionar */
-.add-employee-box { display: flex; gap: 5px; margin-bottom: 15px; }
-.add-employee-box input {
-    flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;
-}
-.add-employee-box button {
-    background-color: var(--success-green); color: white; border: none; border-radius: 4px;
-    width: 35px; cursor: pointer; font-weight: bold; font-size: 18px;
-}
-
-/* Lista de Chips */
-.employees-container { display: flex; flex-direction: column; gap: 6px; }
-.employee-chip {
-    background-color: #fff; border: 1px solid #ddd; padding: 8px 12px;
-    border-radius: 6px; cursor: grab; font-size: 13px; color: #444; font-weight: 600;
-    display: flex; justify-content: space-between; align-items: center;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;
-}
-.employee-chip:hover {
-    border-color: var(--primary-blue); transform: translateX(3px); background-color: #f8faff;
-}
-.delete-emp-btn { color: var(--danger-red); font-weight: bold; cursor: pointer; opacity: 0.4; }
-.delete-emp-btn:hover { opacity: 1; }
-
-
-/* --- ÁREA PRINCIPAL (TABELA) --- */
-.escala-main-area {
-    flex: 1; 
-    min-width: 0; 
+.header-left-group { 
     display: flex; 
-    flex-direction: column;
-    overflow-x: hidden; 
+    gap: 10px; 
 }
 
-/* Controles */
-.escala-controls {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
-    background: #fff; padding: 10px 20px; border-radius: 8px; border: 1px solid #dee2e6;
+.btn-toggle-sidebar {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-.month-label { font-size: 1.5em; font-weight: 800; color: #212529; text-transform: capitalize; min-width: 220px; text-align: center; }
-#prev-month, #next-month {
-    background: #e9ecef; border: 1px solid #ced4da; color: #333; width: 36px; height: 36px;
-    border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s;
-}
-#prev-month:hover, #next-month:hover { background: #dee2e6; }
-.separator { flex: 1; }
+.btn-toggle-sidebar:hover { background: #f1f5f9; color: #007bff; }
 
-.action-btn {
-    padding: 8px 16px; border-radius: 4px; border: none; font-weight: 600; font-size: 13px; cursor: pointer;
-    background-color: var(--primary-blue); color: white; transition: 0.2s;
-}
-.action-btn:hover { opacity: 0.9; }
-.standard-btn { background-color: var(--warning-yellow); color: #212529; }
-.secondary { background-color: var(--text-muted); }
-
-
-/* --- ESTILOS DA TABELA (PROFISSIONAL) --- */
-
-.escala-container {
-    display: flex; flex-direction: column; gap: 25px; width: 100%;
+.editor-quick-tools { 
+    display: flex; 
+    gap: 10px; 
 }
 
-.bloco-semana {
-    background: white;
-    margin-bottom: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
-
-.escala-table {
-    width: 100%;
-    border-collapse: collapse; 
-    font-family: 'Segoe UI', sans-serif;
+.btn-tool-modern {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
     font-size: 12px;
-    table-layout: fixed; 
-}
-
-/* --- CABEÇALHOS (Preto/Cinza Escuro) --- */
-.escala-table thead th {
-    background-color: #212529; 
-    color: #ffffff;
-    padding: 10px 5px;
-    text-align: center;
-    border: 1px solid var(--text-main);
-    text-transform: uppercase;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    height: 40px;
-}
-
-/* Colunas Fixas */
-.col-cargo { width: 14%; background-color: #1a1d20 !important; }
-.col-horario { width: 8%; background-color: #1a1d20 !important; }
-
-/* Dias da Semana */
-.header-weekend { background-color: var(--text-main) !important; } /* Fim de semana igual */
-.header-outside { background-color: #e9ecef !important; color: #adb5bd !important; border-color: #dee2e6 !important; }
-
-
-/* --- DIVISORES DE TURNO (Cores Vivas) --- */
-
-/* Manhã - Verde Petróleo */
-.header-manha td {
-    background-color: #009688; 
-    color: #ffffff;
-    font-weight: 800;
-    text-transform: uppercase;
-    padding: 8px 15px;
-    text-align: left;
-    border: 1px solid #00796b;
-    font-size: 12px;
-}
-
-/* Tarde - Laranja/Amarelo */
-.header-tarde td {
-    background-color: var(--warning-yellow); 
-    color: #212529;
-    font-weight: 800;
-    text-transform: uppercase;
-    padding: 8px 15px;
-    text-align: left;
-    border: 1px solid #e0a800;
-    font-size: 12px;
-}
-
-
-/* --- CÉLULAS DE DADOS (CORPO DA TABELA) --- */
-
-.escala-table td {
-    min-height: 38px; 
-    height: 1px; 
-    vertical-align: middle; 
-    position: relative;
-}
-
-/* Colunas Fixas (Labels) */
-.cargo-cell {
-    background-color: #e2e6ea !important;
-    color: #212529;
     font-weight: 700;
-    padding-left: 10px !important;
-    text-align: left;
-    font-size: 11px;
-    vertical-align: middle; 
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s;
+}
+.btn-tool-modern:active { transform: scale(0.95); }
+
+/* Cores específicas por função */
+.btn-tool-modern.folga { background: #fee2e2; color: #dc2626; }
+.btn-tool-modern.feriado { background: #fef3c7; color: #d97706; }
+.btn-tool-modern.ferias { background: #ffedd5; color: #ea580c; }
+.btn-tool-modern.config { background: #dbeafe; color: #2563eb; }
+.btn-tool-modern.magic { background: #dcfce7; color: #16a34a; }
+
+/* --- 3. NAVEGAÇÃO DE MÊS (TOP CARD) --- */
+.escala-navigation-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    background: #fff;
+    padding: 12px 35px;
+    border-radius: 50px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    width: fit-content;
+    margin: 0 auto 25px auto;
+    border: 1px solid #e2e8f0;
 }
 
-.time-cell {
-    background-color: #e2e6ea !important;
-    text-align: center;
-    color: #495057;
-    font-weight: 600;
+.month-info { display: flex; align-items: center; gap: 12px; color: #1e293b; font-weight: 700; font-size: 18px; }
+
+.nav-month-btn { 
+    background: #f8fafc; border: 1px solid #e2e8f0; width: 38px; height: 38px; 
+    border-radius: 50%; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center;
+}
+.nav-month-btn:hover { background: #007bff; color: white; border-color: #007bff; }
+
+/* --- 4. CARDS DE SEMANA --- */
+.week-wrapper, .week-wrapper-readonly {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 30px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.week-header-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #64748b;
+    text-transform: uppercase;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #f8fafc;
+    padding: 10px 15px;
+    border-radius: 8px;
+    border-left: 5px solid #007bff;
+}
+
+/* --- 5. TABELA E CÉLULAS --- */
+.escala-table-modern {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.escala-table-modern th {
+    background: #f8fafc;
+    color: #64748b;
     font-size: 11px;
+    font-weight: 800;
+    padding: 12px 5px;
+    text-transform: uppercase;
+    border-bottom: 2px solid #e2e8f0;
+    text-align: center;
+}
+
+.escala-table-modern td {
+    padding: 10px 5px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 13px;
+    color: #334155;
+    text-align: center;
     vertical-align: middle;
 }
 
-/* Cores Sutis nas Linhas */
-.row-manha td:not(.cargo-cell):not(.time-cell) { background-color: #f0fdfa; } 
-.row-tarde td:not(.cargo-cell):not(.time-cell) { background-color: #fffdf0; } 
+.cargo-cell, .time-cell {
+    background-color: #f8fafc !important;
+    font-weight: 700;
+    color: #475569;
+    text-align: left !important;
+    padding-left: 12px !important;
+}
 
+/* --- 6. CABEÇALHOS DE TURNO --- */
+.header-manha td { background: #00b894 !important; color: white !important; font-weight: 800; font-size: 11px; text-transform: uppercase; }
+.header-tarde td { background: #f1c40f !important; color: #7f6000 !important; font-weight: 800; font-size: 11px; text-transform: uppercase; }
 
-/* --- INPUT / TEXTAREA (O CAMPO DE TEXTO) --- */
+/* --- 7. INPUTS E INTERAÇÃO --- */
 .escala-input {
     width: 100%;
-    height: 100%; 
-    min-height: 36px; 
-    border: none;
-    text-align: center;
+    border: 1px solid transparent;
     background: transparent;
-    font-size: 11px;
-    color: #333;
-    font-weight: 500;
-    font-family: 'Segoe UI', sans-serif;
+    text-align: center;
+    font-size: 12px;
+    font-family: inherit;
+    resize: none;
+    transition: 0.2s;
     outline: none;
-    
-    /* CRUCIAL PARA AUMENTAR A ALTURA: */
-    white-space: pre-wrap !important; 
-    word-break: break-word;           
-    overflow: hidden;                 
-    resize: none;          
-    line-height: 1.3;
-    padding: 10px 2px;
-    box-sizing: border-box;
-    display: block;
+    white-space: pre-wrap;
+    padding: 8px 2px;
 }
 
 .escala-input:focus {
     background-color: #ffffff;
-    box-shadow: inset 0 0 0 2px var(--primary-blue);
+    border-radius: 4px;
+    box-shadow: 0 0 0 2px #007bff;
+}
+
+/* Destaques e Estados */
+.cell-feriado {
+    background-color: #fffbeb !important; /* Creme/Laranja claríssimo */
+    border-left: 1px solid #fde68a !important;
+    border-right: 1px solid #fde68a !important;
     position: relative;
-    z-index: 5;
+}
+.cell-feriado::after {
+    display: none !important;
+}
+.holiday-name-label {
+    font-size: 8px;
+    text-transform: uppercase;
+    font-weight: 800;
+    display: block;
+    line-height: 1;
+    margin-top: 2px;
+}
+.today-header { background: #fff9c4 !important; color: #2c3e50 !important; }
+.today-cell { background: #fffde7 !important; }
+.my-name-highlight {
+    background-color: #e3f2fd !important;
+    color: #007bff !important;
+    font-weight: 900 !important;
+    padding: 2px 4px;
+    border-radius: 4px;
+    border: 1px solid #007bff;
+}
+.row-ferias td { background-color: #fff8e1 !important; color: #d35400; font-weight: 600; }
+.row-folga td { background-color: #fef2f2 !important; color: #c0392b; font-weight: 600; }
+.bold-red { color: #dc2626 !important; font-weight: 800; }
+
+/* --- 8. ELEMENTOS DA SIDEBAR --- */
+.employee-chip {
+    background-color: #fff; border: 1px solid #e2e8f0; padding: 10px 14px;
+    border-radius: 8px; cursor: grab; font-size: 13px; color: #1e293b; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; transition: 0.2s;
+}
+.employee-chip:hover { border-color: #007bff; transform: translateX(4px); background-color: #f0f7ff; }
+
+.comp-off-badge {
+    background: #ef4444; color: white; font-size: 10px; padding: 2px 6px;
+    border-radius: 4px; font-weight: 900; margin-left: 8px;
 }
 
-/* Fim de Semana */
-.weekend-cell input, .weekend-cell textarea { 
-    background-color: rgba(0,0,0,0.04); 
-    color: #555; 
+#escala-view-container {
+    width: 100%;
+    display: block; /* Garante que não herde display: none por acidente */
+    animation: fadeIn 0.4s ease;
 }
 
-/* Fora do Mês */
-.outside-cell { background-color: var(--bg-body) !important; }
-.outside-cell textarea { cursor: not-allowed; }
-
-/* Responsividade */
-@media (max-width: 1300px) {
-    .escala-wrapper { flex-direction: column; }
-    .escala-sidebar { width: 100%; position: static; max-height: 200px; margin-bottom: 20px; }
-    .escala-table-wrapper { overflow-x: auto; }
-    .escala-table { min-width: 1000px; }
+/* Esconde se a classe hidden for aplicada (pelo editor) */
+#escala-view-container.hidden {
+    display: none !important;
 }
 
-/* Container de cada Semana */
-.week-wrapper {
-    display: flex;
-    gap: 15px;
-    margin-bottom: 25px;
-    align-items: flex-start;
+#escala-view-content {
+    min-height: 400px;
+    width: 100%;
 }
 
-/* Tabela Principal (Seg-Sex) - Ocupa a maior parte */
-.week-main {
-    flex: 3;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    overflow: hidden;
+/* --- EFEITO FADE (FORA DO MÊS) --- */
+.month-fade {
+    opacity: 0.3 !important; /* Deixa bem clarinho */
+    filter: grayscale(100%); /* Remove a cor para não distrair */
+    pointer-events: none;    /* Impede interação com dias de outros meses */
 }
 
-/* Tabela FDS (Sáb-Dom) - Menor e Separada */
+/* --- DIFERENCIAÇÃO DO FINAL DE SEMANA (FDS) --- */
+/* Fundo leve para o card do FDS para separá-lo visualmente */
 .week-weekend {
-    flex: 1; /* Tamanho fixo menor */
-    min-width: 250px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    overflow: hidden;
+    background-color: #fff8f8 !important; /* Levíssimo tom rosado */
+    border: 1px solid #fecaca !important; /* Borda levemente avermelhada */
+    flex: 0 0 320px !important; /* Mantém largura fixa para não esmagar */
 }
 
-/* Estilo específico para FDS */
-.weekend-table th {
+/* Cabeçalho do FDS (Tom de Vermelho/Coral) */
+.weekend-table thead th {
     background-color: #d9534f !important; 
-    color: white;
-    border-color: #c9302c;
+    color: white !important;
+    border-bottom: 2px solid #b92c28 !important;
 }
 
+/* Célula de Horário do FDS */
 .time-cell-fds {
-    background-color: #fce8e6;
-    font-weight: bold;
-    text-align: center;
-    color: #a94442;
-    width: 100px;
+    background-color: #fce8e6 !important;
+    color: #b91c1c !important;
+    font-weight: 800 !important;
 }
 
-.col-horario-fds { width: 100px; }
-
-/* Ajuste Responsivo */
-@media (max-width: 1400px) {
-    .week-wrapper {
-        flex-direction: column; 
-    }
-    .week-weekend {
-        width: 100%;
-    }
+/* Ajuste na Tabela Principal (Seg-Sex) para contraste */
+.week-main .escala-table-modern thead th {
+    background-color: #475569 !important; /* Cinza Escuro Profissional */
+    color: white !important;
 }
 
-/* --- LINHAS ESPECIAIS (Férias e Folga) --- */
-
-/* Férias */
-.row-ferias td {
-    background-color: #fff8e1 !important; /* Amarelo muito suave */
-}
-.row-ferias .cargo-cell {
-    color: #e67e22; /* Laranja Escuro */
-    font-weight: 800;
-}
-.row-ferias textarea {
-    color: #d35400; /* Texto laranja forte */
+/* Tooltip base */
+.folga-tooltip {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dotted #c0392b;
     font-weight: 600;
+    color: #c0392b;
 }
 
-/* Folga */
-.row-folga td {
-    background-color: #fdf2f2 !important; /* Vermelho muito suave */
+/* Caixa flutuante */
+.folga-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 130%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2c3e50;
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 9999;
 }
-.row-folga .cargo-cell, .row-folga .time-cell-fds {
-    color: #c0392b; /* Vermelho Escuro */
-    font-weight: 800;
+
+/* Setinha */
+.folga-tooltip::before {
+    content: "";
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: #2c3e50 transparent transparent transparent;
+    opacity: 0;
+    transition: opacity 0.2s ease;
 }
-.row-folga textarea {
-    color: #c0392b; /* Texto vermelho */
-    font-weight: 600;
+
+/* Hover */
+.folga-tooltip:hover::after,
+.folga-tooltip:hover::before {
+    opacity: 1;
+}
+
+/* Container do nome com tooltip */
+.tooltip-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+/* O balão em si */
+.tooltip-wrapper::after {
+    content: attr(data-tooltip); /* Pega o texto do atributo JS */
+    position: absolute;
+    bottom: 125%; /* Posiciona acima do nome */
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    
+    /* Estilo Visual */
+    background-color: #1e293b; /* Azul escuro elegante */
+    color: #ffffff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    
+    /* Invisível por padrão */
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+}
+
+/* A setinha do balão */
+.tooltip-wrapper::before {
+    content: "";
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: #1e293b transparent transparent transparent;
+    
+    /* Invisível por padrão */
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 100;
+}
+
+/* Mostrar ao passar o mouse */
+.tooltip-wrapper:hover::after,
+.tooltip-wrapper:hover::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.header-feriado {
+    background-color: #f59e0b !important; /* Laranja âmbar sólido */
+    color: white !important;
+    border-bottom: 3px solid #d97706 !important;
+}
+
+.header-feriado small {
+    color: rgba(255, 255, 255, 0.9);
+    display: block;
+    font-size: 9px;
+    margin-top: 2px;
 }
 
 /* =========================================
@@ -2022,31 +2137,6 @@ body.is-admin div.admin-only {
     }
 }
 
-/* --- ESCALA VIEW vs EDIT --- */
-#escala-view-container {
-    animation: fadeIn 0.3s ease;
-}
-
-#escala-editor-wrapper {
-    animation: fadeIn 0.3s ease;
-}
-
-/* Garante que o modo leitura não tenha cursores de texto */
-.escala-readonly textarea {
-    cursor: default !important;
-    background-color: transparent !important;
-    box-shadow: none !important;
-}
-
-.user-highlight {
-    background-color: #e3f2fd !important; /* Azul bem claro */
-    color: #000000 !important; /* Azul escuro forte */
-    font-weight: 800 !important;
-    border: 2px solid #0070C0 !important; /* Borda azul destaque */
-    box-shadow: 0 0 5px rgba(33, 150, 243, 0.3) !important;
-    border-radius: 4px;
-}
-
 /* =========================================
    MODAL DE PAGAMENTOS
    ========================================= */
@@ -2244,17 +2334,44 @@ body.is-admin div.admin-only {
 .kpi-pbi-card:nth-child(4) { border-top-color: var(--warning-yellow); } /* Amarelo */
 
 .kpi-label {
-    font-size: 13px;
+    font-size: 11px;
+    color: #95a5a6; /* Cinza azulado suave */
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #888;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    text-align: left;
-    justify-content: flex-start;
+    letter-spacing: 0.8px;
+    margin-bottom: 6px;
+}
+
+* Wrapper do Gráfico para evitar distorção e corte */
+.chart-canvas-wrapper {
+    position: relative;
+    height: 340px !important; 
+    width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 10px 10px 10px; /* Espaço no topo */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+    overflow: visible !important;
+}
+
+canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Títulos dos Gráficos (se houver h3 dentro dos cards) */
+.chart-canvas-wrapper h3, 
+.chart-card h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #555;
+    margin: 0 0 15px 0;
+    padding-left: 12px;
+    border-left: 4px solid #007bff;
+    text-transform: uppercase;
+    line-height: 1.2;
 }
 
 .apexcharts-yaxis-label {
@@ -2262,9 +2379,9 @@ body.is-admin div.admin-only {
 }
 
 .kpi-value {
-    font-size: 32px;
+    font-size: 22px;
     font-weight: 800;
-    color: #212529;
+    color: #2c3e50; /* Azul escuro quase preto */
     letter-spacing: -0.5px;
 }
 
@@ -2292,7 +2409,7 @@ body.is-admin div.admin-only {
 .chart-box {
     background: #ffffff;
     border-radius: 16px;
-    padding: 25px;
+    padding: 20px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.04);
     border: 1px solid #f0f0f0;
     display: flex;
@@ -2300,26 +2417,46 @@ body.is-admin div.admin-only {
 }
 
 .chart-box h3 {
-    margin: 0 0 20px 0;
+   width: 100%;             
+    text-align: left;        
     font-size: 16px;
-    color: #495057;
     font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 15px;     
+    margin-top: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
-    text-align: left !important;
-    justify-content: flex-start !important;
-    margin-bottom: 20px;
+}
+
+/* Card de KPI Moderno */
+.kpi-card-jur {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    border-left-width: 5px !important;
+    border-left-style: solid;
+    transition: all 0.2s ease-in-out;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+}
+
+.kpi-card-jur:hover {
+    transform: translateY(-3px); /* Levanta levemente ao passar o mouse */
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
 }
 
 /* Ícones nos títulos dos gráficos */
 .chart-box h3::before {
     content: '';
-    display: inline-block;
-    width: 6px;
-    height: 18px;
-    background: var(--primary-blue); /* Accent color */
-    border-radius: 4px;
+    display: block;
+    width: 5px;              
+    height: 20px;            
+    background-color: #3498db; 
+    margin-right: 10px;      
+    border-radius: 3px;     
 }
 
 /* Tamanhos */
@@ -2343,13 +2480,14 @@ body.is-admin div.admin-only {
 
 /* Texto da Meta (Centralizado no Gauge) */
 .meta-text {
-    margin-top: -20px;
-    font-size: 16px;
-    font-weight: 700;
-    color: #333;
-    background: var(--bg-body);
-    padding: 5px 15px;
-    border-radius: 20px;
+    text-align: center;
+    background-color: #f8f9fa; 
+    padding: 10px 15px;
+    border-radius: 50px;       
+    border: 1px solid #e9ecef;
+    margin: -10px auto 0 auto; 
+    width: fit-content;        
+    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
 }
 
 /* --- TABELA DO DASHBOARD (ÚLTIMOS PAGAMENTOS) --- */
@@ -2466,22 +2604,6 @@ body.is-admin div.admin-only {
     border-radius: 6px; border: none; cursor: pointer; font-weight: bold;
 }
 .cancel-btn:hover { background: #545b62; }
-
-/* --- DESTAQUE DO DIA ATUAL (COLUNA) --- */
-.today-column-header {
-    background-color: #fffb00 !important; /* Fundo Amarelo Claro no Cabeçalho */
-    color: #000000 !important;
-    border-bottom: 2px solid #ffeeba !important;
-}
-
-.today-column-cell {
-    background-color: #fffb033d !important; /* Fundo Amarelo Muito Claro nas Células */
-}
-
-/* Garante que o input dentro da célula fique transparente para mostrar a cor de fundo */
-.today-column-cell .escala-input {
-    background-color: transparent !important;
-}
 
 .swal2-container {
     z-index: 200000 !important; /* Valor bem alto para vencer todos os overlays */
@@ -2618,11 +2740,9 @@ body.is-admin div.admin-only {
 /* O Container dos Cards */
 #juridico-kpi-container {
     display: grid;
-    /* Isso faz a mágica: cria colunas automáticas com largura mínima de 160px */
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); 
-    gap: 15px; /* Espaço entre os cards */
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 15px;
     margin-bottom: 25px;
-    width: 100%;
 }
 
 /* O Visual de Cada Card */
@@ -2696,19 +2816,6 @@ body.is-admin div.admin-only {
     border: 2px solid #1abc9c; /* Destaque para não esquecerem */
 }
 
-.cell-feriado {
-    background-color: #ffe0b2 !important; /* Laranja suave */
-    border: 2px solid #fb8c00;
-    color: #e65100;
-    font-weight: bold;
-}
-
-/* Se for feriado Total (Natal), pinta de vermelho */
-.cell-feriado-total {
-    background-color: #ffcdd2 !important;
-    color: #c62828;
-}
-
 #external-events {
     padding: 10px;
     background: #f8f9fa;
@@ -2775,3 +2882,449 @@ body.is-admin div.admin-only {
 .edit-btn:hover {
     color: #3498db;
 }
+
+#tab-dash-juridico {
+    background-color: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    width: 100% !important;
+    max-width: 98% !important;
+    align-items: flex-start !important;
+}
+
+/* Garante que o grid de KPIs se comporte bem em telas grandes */
+@media (min-width: 1400px) {
+    #juridico-kpi-container {
+        grid-template-columns: repeat(6, 1fr) !important;
+    }
+}
+
+.comp-off-badge {
+    background-color: #e74c3c;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: auto;
+    display: none;
+}
+.comp-off-badge.visible { display: inline-block; }
+
+/* Célula Bloqueada (Férias/Folga) */
+.cell-blocked {
+    background-color: #eee !important; /* Cinza */
+    color: #999 !important;
+    pointer-events: none; /* Impede clicar/editar */
+    font-weight: bold;
+    text-align: center;
+    border: 1px solid #ddd;
+    position: relative;
+}
+
+.cell-blocked::after {
+    content: "🚫"; /* Ícone visual */
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.2;
+    font-size: 20px;
+}
+
+/* --- ESTILIZAÇÃO MODERNA PARA OS POPUPS (SWAL) --- */
+
+/* Container Geral do Formulário */
+.swal-modern-form {
+    text-align: left;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding: 0 10px;
+}
+
+/* Grupos de Inputs */
+.swal-input-group {
+    margin-bottom: 15px;
+}
+
+/* Labels (Etiquetas) */
+.swal-custom-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Inputs e Selects */
+.swal-custom-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 15px;
+    color: #333;
+    background-color: #f9f9f9;
+    box-sizing: border-box;
+    transition: all 0.3s ease;
+}
+
+.swal-custom-input:focus {
+    border-color: #3498db;
+    background-color: #fff;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+    outline: none;
+}
+
+/* Texto de ajuda ou contador */
+.swal-helper-text {
+    font-size: 12px;
+    color: #e74c3c;
+    font-weight: bold;
+    margin-top: 4px;
+    display: block;
+}
+
+/* ESTILOS PARA ABA DE USUÁRIOS E GERENCIAMENTO DE EQUIPE */
+
+/* --- CABEÇALHO PADRÃO --- */
+.page-title-blue { color: #007bff; text-align: center; font-weight: 700; font-size: 24px; margin-bottom: 5px; }
+.header-line { width: 60px; height: 4px; background: #007bff; margin: 0 auto 30px; border-radius: 2px; }
+
+/* --- CONTAINER ESTILO CARD CLARO --- */
+.table-container-light { 
+    background: #ffffff; 
+    padding: 20px; 
+    border-radius: 12px; 
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.medcof-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+
+/* --- CORREÇÃO: CABEÇALHOS E TEXTO --- */
+.medcof-table th { 
+    color: #64748b; font-size: 11px; font-weight: 700; padding: 10px 15px; 
+    text-align: left; text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* --- CORREÇÃO: VISIBILIDADE DO NOME --- */
+.user-name-cell { 
+    color: #1e293b !important; /* Cor escura para destacar no fundo claro */
+    font-weight: 600; 
+}
+.user-email-cell { color: #64748b; }
+
+.medcof-row { background: #ffffff; }
+.medcof-row td { padding: 12px 15px; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.medcof-row td:first-child { border-left: 1px solid #f1f5f9; border-radius: 8px 0 0 8px; }
+.medcof-row td:last-child { border-right: 1px solid #f1f5f9; border-radius: 0 8px 8px 0; }
+
+/* --- CORREÇÃO: ÍCONE DE AVATAR (BOLINHA) --- */
+.avatar-circle-medcof { 
+    width: 34px; 
+    height: 34px; 
+    border-radius: 50%; 
+    background-color: #007bff; /* Azul MedCof */
+    color: #ffffff !important; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-weight: 700; 
+    font-size: 12px;
+}
+
+/* --- BADGES DE CARGO --- */
+.badge-role { padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 800; }
+.badge-admin { background-color: #dbeafe; color: #1e40af; }
+.badge-normal { background-color: #f1f5f9; color: #475569; }
+
+/* --- BOTÃO EDITAR --- */
+.btn-table-edit { 
+    background: white;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    padding: 6px 12px; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.btn-table-edit:hover { background: #f8fafc; color: #1e293b; }
+
+/* --- PAINEL LATERAL (DRAWER LIGHT) --- */
+.drawer-panel-light {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 420px;
+    height: 100%;
+    background: #ffffff;
+    z-index: 5000;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+    padding: 0;
+}
+
+.drawer-panel-light.hidden { transform: translateX(100%); display: block !important; }
+
+.drawer-content { display: flex; flex-direction: column; height: 100%; padding: 30px; }
+
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+}
+
+.drawer-header h3 { color: #007bff; font-weight: 700; font-size: 18px; margin: 0; }
+.btn-close-drawer { background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; }
+
+/* --- ABAS E FORMULÁRIO --- */
+.drawer-tabs-light { display: flex; gap: 20px; margin-bottom: 25px; border-bottom: 1px solid #f1f5f9; }
+.drawer-tab-link {
+    background: none; border: none; padding: 10px 0; color: #64748b;
+    font-weight: 600; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.drawer-tab-link.active { color: #007bff; border-bottom-color: #007bff; }
+
+.form-group-light { margin-bottom: 20px; }
+.form-group-light label { display: block; font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 8px; }
+.form-group-light input {
+    width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+    font-size: 14px; background: #f8fafc; color: #1e293b; box-sizing: border-box;
+}
+
+/* --- SWITCH E RADIOS --- */
+.status-flex-row-light {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 0; border-top: 1px solid #f1f5f9; margin-top: 10px;
+}
+.status-flex-row-light span { font-size: 13px; font-weight: 600; color: #1e293b; }
+
+.medcof-switch-light { position: relative; display: inline-block; width: 44px; height: 22px; }
+.medcof-switch-light input { opacity: 0; width: 0; height: 0; }
+.medcof-slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #e2e8f0; transition: .4s; border-radius: 34px;
+}
+.medcof-slider:before {
+    position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    background-color: white; transition: .4s; border-radius: 50%;
+}
+input:checked + .medcof-slider { background-color: #007bff; }
+input:checked + .medcof-slider:before { transform: translateX(22px); }
+
+.radio-card {
+    display: flex; align-items: flex-start; gap: 12px; padding: 15px;
+    border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; cursor: pointer;
+}
+.radio-card:has(input:checked) { border-color: #007bff; background: #f0f7ff; }
+.radio-info strong { display: block; font-size: 14px; color: #1e293b; }
+.radio-info span { font-size: 12px; color: #64748b; }
+
+/* --- RODAPÉ --- */
+.drawer-footer-light { margin-top: auto; display: flex; gap: 12px; padding-top: 20px; border-top: 1px solid #f1f5f9; }
+.btn-cancel-light { flex: 1; padding: 12px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; font-weight: 600; cursor: pointer; color: #64748b; }
+.btn-save-light { flex: 1; padding: 12px; border: none; background: #007bff; color: white; border-radius: 8px; font-weight: 700; cursor: pointer; }
+
+.actions-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: flex-start;
+}
+
+.btn-table-delete {
+    background: transparent;
+    border: none;
+    color: #cbd5e1; /* Cinza discreto */
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    padding: 5px;
+}
+
+.btn-table-delete:hover {
+    color: #ef4444; /* Vermelho ao passar o mouse */
+    transform: scale(1.1);
+}
+
+.btn-primary-medcof { 
+    background-color: #007bff; 
+    color: white; 
+    border: none; 
+    padding: 10px 25px; 
+    border-radius: 6px; 
+    font-weight: 700; 
+    font-size: 13px;
+    cursor: pointer; 
+    transition: background 0.2s, transform 0.1s;
+    text-transform: uppercase;
+    display: block;
+    margin: 0 auto 20px auto; /* Centraliza acima da tabela */
+}
+
+.btn-primary-medcof:hover { 
+    background-color: #0056b3; 
+}
+
+.btn-primary-medcof:active {
+    transform: scale(0.98);
+}
+
+/* Estilização dos ícones na sidebar */
+#nav-menu i {
+    width: 20px;
+    margin-right: 10px;
+    text-align: center;
+    font-size: 1.1rem;
+    color: #64748b; /* Cor cinza padrão */
+    transition: color 0.2s;
+}
+
+/* Cor do ícone quando o botão está ativo ou com hover */
+.nav-tab:hover i, 
+.nav-tab.active i,
+.menu-header:hover i {
+    color: #007bff; /* Azul MedCof */
+}
+
+/* Ícone de sair (vermelho no hover) */
+.logout-btn:hover i {
+    color: #ef4444;
+}
+
+/* Garante que o texto e ícone fiquem alinhados verticalmente */
+.nav-tab, .menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+/* Ajuste dos Ícones nos Cards da Home */
+.home-card .icon-container {
+    font-size: 2rem;      /* Ícone maior para destaque no card */
+    margin-bottom: 15px;
+    color: #007bff;       /* Azul MedCof como padrão */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 60px;         /* Altura fixa para alinhar os títulos */
+}
+
+/* Diferenciação de cor para o setor Jurídico se preferir */
+[data-sector="juridico"] .home-card .icon-container {
+    color: #6A1B9A;       /* Roxo conforme o título da sua seção Jurídico */
+}
+
+/* Efeito de hover no card */
+.home-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.home-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+}
+
+.home-card h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    color: #1e293b;
+}
+
+.home-card p {
+    font-size: 0.9rem;
+    color: #64748b;
+}
+
+/* Cabeçalho Premium da Home Page */
+.home-header-premium {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 25px 40px;
+    background: #ffffff;
+    border-radius: 16px;
+    
+    /* ALINHAMENTO COM O GRID */
+    width: 100%;
+    max-width: 1200px; /* Altere para o mesmo valor que usa nos cards */
+    margin: 0 auto 40px auto; 
+    
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    box-sizing: border-box; /* Garante que o padding não "estoure" a largura */
+}
+
+/* GRUPO DE TEXTO (LADO ESQUERDO) */
+.welcome-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.welcome-text-group h1 {
+    font-size: 32px; /* Aumentado para preencher melhor o espaço */
+    color: #1e293b;
+    margin: 0;
+}
+
+.name-highlight {
+    color: #007bff; /* Azul MedCof */
+    font-weight: 800;
+}
+
+.welcome-text-group p {
+    color: #64748b;
+    font-size: 16px;
+    margin: 0;
+}
+
+/* WIDGETS DE TEMPO (LADO DIREITO) */
+.header-clock-box {
+    display: flex;
+    gap: 15px; /* Agora os itens ficam lado a lado para ganhar largura */
+    align-items: center;
+}
+
+.clock-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #f8fafc;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #f1f5f9;
+    color: #475569;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap; /* Impede quebras de linha */
+}
+
+.clock-item i {
+    color: #007bff;
+    font-size: 18px;
+}
+
+.wave-emoji {
+    display: inline-block;
+    animation: wave-animation 2.5s infinite;
+    transform-origin: 70% 70%;
+}
+
+@keyframes wave-animation {
+    0% { transform: rotate( 0.0deg) }
+    10% { transform: rotate(14.0deg) }
+    20% { transform: rotate(-8.0deg) }
+    30% { transform: rotate(14.0deg) }
+    40% { transform: rotate(-4.0deg) }
+    50% { transform: rotate(10.0deg) }
+    100% { transform: rotate( 0.0deg) }
+}
+

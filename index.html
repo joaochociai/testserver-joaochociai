@@ -13,6 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <link rel="stylesheet" href="style.css">
 </head>
@@ -22,35 +23,53 @@
         <div class="login-box">
             <img src="logo.png" alt="MedCof Logo" class="login-logo">
             <h2>Acesso Restrito</h2>
-            <form id="login-form">
-                <input type="email" id="login-email" placeholder="E-mail corporativo" required>
-                <input type="password" id="login-password" placeholder="Senha" required>
-                <button type="submit" id="login-btn">ENTRAR NO SISTEMA</button>
-            </form>
-            <p id="login-message"></p>
+            
+            <p style="color: #666; margin-bottom: 20px;">Utilize sua conta corporativa para acessar o sistema.</p>
+
+            <button onclick="loginWithGoogle()" type="button" class="google-btn" style="background-color: white; color: #555; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; width: 100%; padding: 12px; border-radius: 4px; cursor: pointer; font-weight: 600; transition: background 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 20px; margin-right: 12px;">
+                ENTRAR COM GOOGLE
+            </button>
+
+            <p id="login-message" style="margin-top: 15px;"></p>
         </div>
     </div>
 
     <div id="app-content" style="display: none;">
         
         <div id="sidebar-menu">
-            <img src="logo.png" alt="Logo da Empresa" id="sidebar-logo">
+            <div class="sidebar-header">
+                <img src="logo.png" alt="Logo da Empresa" id="sidebar-logo">
+            </div>  
             
-            <div id="nav-menu">
-                <button id="btn-home" class="nav-tab" onclick="window.showTab('tab-home', this)">🏠 Início</button>
+            <div id="nav-menu" class="sidebar-content">
+                <button id="btn-home" class="nav-tab" onclick="window.showTab('tab-home', this)">
+                    <i class="fas fa-house"></i> Início
+                </button>
 
-                <button id="btn-dashboard" class="nav-tab admin-only" onclick="window.showTab('tab-dashboard', this)" style="background-color: #343a40; color: #ffc107;">📊 Dashboard</button>
-                
-                <button id="btn-dash-juridico" class="nav-tab admin-only" onclick="window.showTab('tab-dash-juridico', this)" style="background-color: #0d47a1; color: white;">⚖️ Dash Jurídico</button>
+                <button id="btn-nav-usuarios" class="nav-tab admin-only" style="display: none;" 
+                        onclick="showTab('tab-usuarios', this); if(window.loadUserListData) window.loadUserListData()">
+                    <i class="fas fa-user-shield"></i> Gerenciar Equipe
+                </button>
 
                 <div class="sector-group" data-sector="cobranca">
-                    <button class="nav-tab sector-btn" data-sector="cobranca" onclick="showTab('tab-escala', this)">📅 Escala Mensal</button>
+                    <button class="nav-tab sector-btn" data-sector="cobranca" onclick="showTab('tab-escala', this)">
+                        <i class="fas fa-calendar-days"></i> Escala Mensal
+                    </button>
                 </div>
+
+                <button id="btn-dashboard" class="nav-tab admin-only" onclick="window.showTab('tab-dashboard', this)">
+                    <i class="fas fa-chart-line"></i> Dashboard Cobrança
+                </button>
+                
+                <button id="btn-dash-juridico" class="nav-tab admin-only" onclick="window.showTab('tab-dash-juridico', this)">
+                    <i class="fas fa-scale-balanced"></i> Dashboard Jurídica
+                </button>
 
                 <div class="menu-group sector-group" data-sector="cobranca">
                     <div class="sector-title">COBRANÇA</div>
                     <button class="menu-header" onclick="window.toggleMenu('menu-agendamentos')">
-                        🗓️ Agendamentos <span class="arrow">▼</span>
+                        <i class="fas fa-calendar-check"></i> Agendamentos <span class="arrow">▼</span>
                     </button>
                     <div id="menu-agendamentos" class="menu-content">
                         <button class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-agendamento', this)">Novo Agendamento</button>
@@ -61,7 +80,7 @@
 
                 <div class="menu-group sector-group" data-sector="cobranca">
                     <button class="menu-header" onclick="window.toggleMenu('menu-ligacoes')">
-                        📞 Ligações <span class="arrow">▼</span>
+                        <i class="fas fa-phone-volume"></i> Ligações <span class="arrow">▼</span>
                     </button>
                     <div id="menu-ligacoes" class="menu-content">
                         <button class="nav-tab sector-btn" data-sector="cobranca" onclick="window.showTab('tab-cobranca', this)">3ª Cobrança</button>
@@ -71,7 +90,7 @@
                 <div class="menu-group sector-group" data-sector="juridico">
                     <div class="sector-title">JURÍDICO</div>
                     <button class="menu-header" onclick="window.toggleMenu('menu-juridico-ag')">
-                        ⚖️ Agendamentos <span class="arrow">▼</span>
+                        <i class="fas fa-file-contract"></i> Agendamentos <span class="arrow">▼</span>
                     </button>
                     <div id="menu-juridico-ag" class="menu-content">
                         <button class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-novo', this)">Novo Agendamento</button>
@@ -82,51 +101,68 @@
 
                 <div class="menu-group sector-group" data-sector="juridico">
                     <button class="menu-header" onclick="window.toggleMenu('menu-juridico-lig')">
-                        📞 Ligações <span class="arrow">▼</span>
+                        <i class="fas fa-headset"></i> Ligações <span class="arrow">▼</span>
                     </button>
                     <div id="menu-juridico-lig" class="menu-content">
                         <button id="btn-juridico-ligacoes" class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-ligacoes', this)">1° Jurídica</button>
                     </div>
                 </div>
-                
-                <button class="nav-tab logout-btn" onclick="window.logoutSystem()">🔒 Sair</button>
+            </div>
+
+            <div class="sidebar-footer">  
+                <button class="nav-tab logout-btn" onclick="window.logoutSystem()">
+                    <i class="fas fa-right-from-bracket"></i> Sair
+                </button>
             </div>
         </div>
         
         <div id="main-content">
             
             <div id="tab-home" class="tab-content">
-                <div class="home-welcome-box">
-                    <img src="logo.png" alt="Logo" class="home-logo">
-                    <h1>Bem-vindo ao Sistema</h1>
-                    <p class="welcome-text">Selecione uma opção abaixo para começar.</p>
+                <div class="home-header-premium">
+                    <div class="welcome-container">
+                        <div class="welcome-text-group">
+                            <h1>Olá, <span id="home-user-name" class="name-highlight">João</span>! <span class="wave-emoji">👋</span></h1>
+                            <p>Bem-vindo ao Sistema de Cobrança da <strong>MedCof</strong>. O que vamos fazer hoje?</p>
+                        </div>
+                    </div>
+                    
+                    <div class="header-clock-box">
+                        <div class="clock-item">
+                            <i class="fas fa-clock"></i>
+                            <span id="live-clock">16:40:48</span>
+                        </div>
+                        <div class="clock-item">
+                            <i class="fas fa-calendar-day"></i>
+                            <span id="live-date">02 de janeiro de 2026</span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="home-cards-container">
-                    
                     <div class="home-sector-section sector-group" data-sector="cobranca">
                         <h3 class="home-sector-title">Cobrança</h3>
                         <div class="home-cards-grid">
                             <div class="home-card" onclick="window.showTab('tab-agendamento', document.querySelector('[onclick*=\'tab-agendamento\']'))">
-                                <div class="icon">🗓️</div>
+                                <div class="icon-container"><i class="fas fa-calendar-check"></i></div>
                                 <h3>Novo Agendamento</h3>
                                 <p>Agendar link de pagamento</p>
                             </div>
                             
                             <div class="home-card" onclick="document.getElementById('btn-hist-cobranca').click()">
-                                <div class="icon">📂</div>
+                                <div class="icon-container"><i class="fas fa-folder-open"></i></div>
                                 <h3>Histórico</h3>
                                 <p>Consultar agendamentos</p>
                             </div>
 
                             <div class="home-card" onclick="window.showTab('tab-cobranca', document.querySelector('[onclick*=\'tab-cobranca\']'))">
-                                <div class="icon">📞</div>
+                                <div class="icon-container"><i class="fas fa-phone-volume"></i></div>
                                 <h3>3ª Cobrança</h3>
                                 <p>Gestão de inadimplência</p>
                             </div>
 
                             <div class="home-card" onclick="window.showTab('tab-escala', document.querySelector('[onclick*=\'tab-escala\']'))">
-                                <div class="icon">📅</div>
+                                <div class="icon-container"><i class="fas fa-calendar-days"></i></div>
                                 <h3>Escala Mensal</h3>
                                 <p>Gestão de equipe</p>
                             </div>
@@ -137,30 +173,118 @@
                         <h3 class="home-sector-title" style="color: #6A1B9A;">Jurídico</h3>
                         <div class="home-cards-grid">
                             <div class="home-card" onclick="window.showTab('tab-juridico-novo', document.querySelector('[onclick*=\'tab-juridico-novo\']'))">
-                                <div class="icon">⚖️</div>
+                                <div class="icon-container"><i class="fas fa-scale-balanced"></i></div>
                                 <h3>Novo Agendamento</h3>
                                 <p>Agendar envio de link, chamar aluno...</p>
                             </div>
 
                             <div class="home-card" onclick="window.showTab('tab-juridico-calendario', document.querySelector('[onclick*=\'tab-juridico-calendario\']'))">
-                                <div class="icon">📆</div>
+                                <div class="icon-container"><i class="fas fa-calendar-plus"></i></div>
                                 <h3>Calendário</h3>
                                 <p>Panorama geral de agendamentos</p>
                             </div>
 
                             <div class="home-card" onclick="document.getElementById('btn-hist-juridico').click()">
-                                <div class="icon">🗂️</div>
+                                <div class="icon-container"><i class="fas fa-box-archive"></i></div>
                                 <h3>Histórico Jurídico</h3>
                                 <p>Consultar agendamentos</p>
                             </div>
 
                             <div class="home-card" onclick="window.showTab('tab-juridico-ligacoes', document.getElementById('btn-juridico-ligacoes'))">
-                                <div class="icon">📞</div>
+                                <div class="icon-container"><i class="fas fa-headset"></i></div>
                                 <h3>Ligações Jurídica</h3>
                                 <p>Gestão de ligações</p>
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="tab-usuarios" class="tab-content hidden">
+                <div class="page-header-standard">
+                    <h1 class="page-title-blue">GERENCIAMENTO DE EQUIPE</h1>
+                    <div class="header-line"></div>
+                </div>
+
+                <div class="action-bar-right">
+                    <button class="btn-primary-medcof" onclick="openUserModal()">
+                        <i class="fas fa-plus"></i> NOVO USUÁRIO
+                    </button>
+                </div>
+
+                <div class="table-container-light">
+                    <table class="medcof-table">
+                        <thead>
+                            <tr>
+                                <th>PERFIL</th>
+                                <th>NOME COMPLETO</th>
+                                <th>E-MAIL</th>
+                                <th>CARGO</th>
+                                <th>AÇÕES</th>
+                            </tr>
+                        </thead>
+                        <tbody id="user-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="user-modal" class="drawer-panel-light hidden">
+                <div class="drawer-content">
+                    <div class="drawer-header">
+                        <h3 id="user-modal-title">EDITAR USUÁRIO</h3>
+                        <button onclick="closeUserModal()" class="btn-close-drawer">&times;</button>
+                    </div>
+
+                    <div class="drawer-tabs-light">
+                        <button class="drawer-tab-link active" onclick="switchUserTab('dados')">DADOS PESSOAIS</button>
+                        <button class="drawer-tab-link" onclick="switchUserTab('permissoes')">ACESSO</button>
+                    </div>
+
+                    <form id="user-form">
+                        <div id="user-tab-dados" class="drawer-pane">
+                            <div class="form-group-light">
+                                <label>NOME COMPLETO</label>
+                                <input type="text" id="user-nome" placeholder="Digite o nome completo" required>
+                            </div>
+                            <div class="form-group-light">
+                                <label>E-MAIL CORPORATIVO</label>
+                                <input type="email" id="user-email" placeholder="exemplo@medcof.com.br" required>
+                            </div>
+                            
+                            <div class="status-flex-row-light">
+                                <span>USUÁRIO ATIVO</span>
+                                <label class="medcof-switch-light">
+                                    <input type="checkbox" id="user-status-active">
+                                    <span class="medcof-slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="user-tab-permissoes" class="drawer-pane hidden">
+                            <div class="role-selection-light">
+                                <p class="section-hint">Defina o nível de poder do usuário no sistema:</p>
+                                <label class="radio-card">
+                                    <input type="radio" name="user-role" value="admin">
+                                    <div class="radio-info">
+                                        <strong>Administrador</strong>
+                                        <span>Acesso total e gerenciamento de equipe.</span>
+                                    </div>
+                                </label>
+                                <label class="radio-card">
+                                    <input type="radio" name="user-role" value="normal" checked>
+                                    <div class="radio-info">
+                                        <strong>Usuário Comum</strong>
+                                        <span>Acesso restrito aos setores designados.</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="drawer-footer-light">
+                            <button type="button" onclick="closeUserModal()" class="btn-cancel-light">CANCELAR</button>
+                            <button type="submit" class="btn-save-light">SALVAR ALTERAÇÕES</button>
+                        </div>
+                    </form>
                 </div>
             </div>
 
@@ -245,47 +369,57 @@
                 </div>
             </div>
 
-            <div id="tab-dash-juridico" class="tab-content hidden">
-                <div class="dashboard-header" style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 20px; border-radius: 10px; color: white; margin-bottom: 20px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="tab-dash-juridico" class="tab-content hidden" style="width: 100%; padding: 20px; box-sizing: border-box;">
+    
+                <div class="dashboard-header" style="background: linear-gradient(135deg, #0d47a1, #1565c0); padding: 20px; border-radius: 10px; color: white; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                    <div style="display:flex; justify-content:center ; align-items:center; flex-wrap:wrap; gap:15px;">
                         <div>
-                            <h2 style="margin:0; font-size:24px;">Dashboard Jurídico</h2>
-                            <p style="margin:0; opacity:0.8;">Indicadores de Performance e Recuperação</p>
+                            <h2 style="margin:0; font-size:24px; font-weight: 700;">Dashboard Jurídico</h2>
+                            <p style="margin:0; opacity:0.9; font-size: 14px;">Indicadores de Performance e Recuperação</p>
                         </div>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                            <input type="date" id="dash-jur-start" class="date-filter" style="border:none;">
-                            <span style="font-weight:bold;">até</span>
-                            <input type="date" id="dash-jur-end" class="date-filter" style="border:none;">
-                            <button onclick="window.loadJuridicoDashboard()" style="background:white; color:#0d47a1; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; font-weight:bold;">Filtrar</button>
-                            <button onclick="window.openImportDashJuridico()" style="background:#ffca28; color:#333; border:none; padding:8px 15px; border-radius:5px; cursor:pointer; font-weight:bold; margin-left:10px;">📥 Importar Dados</button>
+                        <div style="display:flex; gap:10px; align-items:center; background: rgba(255,255,255,0.1); padding: 5px 15px; border-radius: 8px;">
+                            <input type="date" id="dash-jur-start" class="date-filter" style="border:none; padding:8px; border-radius:5px; color:#333;">
+                            <span style="font-weight:bold; font-size: 13px;">até</span>
+                            <input type="date" id="dash-jur-end" class="date-filter" style="border:none; padding:8px; border-radius:5px; color:#333;">
+                            <button onclick="window.loadJuridicoDashboard()" style="background:white; color:#0d47a1; border:none; padding:8px 20px; border-radius:5px; cursor:pointer; font-weight:bold; transition: transform 0.2s;">Filtrar</button>
+                            <button onclick="window.openImportDashJuridico()" style="background:#ffca28; color:#333; border:none; padding:8px 20px; border-radius:5px; cursor:pointer; font-weight:bold; margin-left:10px;">📥 Importar</button>
                         </div>
                     </div>
                 </div>
 
-                <div class="kpi-grid" id="juridico-kpi-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                <div id="juridico-kpi-container" style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; margin-bottom: 30px; width: 100%;">
+                </div>
+
+                <div class="charts-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px; width: 100%;">
+    
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; min-width: 0;">
+                        <h3 style="color:#0d47a1; margin-bottom:15px; font-weight:700; font-size: 16px;">Retorno dos Disparos (Volume)</h3>
+                        <div class="chart-canvas-wrapper" style="position: relative; height: 340px; width: 100%;">
+                            <canvas id="chart-jur-funil"></canvas>
+                        </div>
                     </div>
 
-                <div class="charts-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    
-                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-                        <h3 style="color:#0d47a1; margin-bottom:15px;">Retorno dos Disparos</h3>
-                        <canvas id="chart-jur-funil"></canvas>
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; min-width: 0;">
+                        <h3 style="color:#0d47a1; margin-bottom:15px; font-weight:700; font-size: 16px;">Comparativo de Recuperação (Mês Anterior)</h3>
+                        <div class="chart-canvas-wrapper" style="position: relative; height: 340px; width: 100%;">
+                            <canvas id="chart-jur-recuperacao"></canvas>
+                        </div>
                     </div>
 
-                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-                        <h3 style="color:#0d47a1; margin-bottom:15px;">Comparativo de Recuperação (Mês Anterior)</h3>
-                        <canvas id="chart-jur-recuperacao"></canvas>
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; min-width: 0;">
+                        <h3 style="color:#0d47a1; margin-bottom:15px; font-weight:700; font-size: 16px;">Histórico de Disparos (Últimos 12 meses)</h3>
+                        <div class="chart-canvas-wrapper" style="position: relative; height: 340px; width: 100%;">
+                            <canvas id="chart-jur-historico"></canvas>
+                        </div>
                     </div>
 
-                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-                        <h3 style="color:#0d47a1; margin-bottom:15px;">Histórico de Disparos (Últimos 12 meses)</h3>
-                        <canvas id="chart-jur-historico"></canvas>
+                    <div class="chart-card" style="background:white; padding:20px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; min-width: 0;">
+                        <h3 style="color:#0d47a1; margin-bottom:15px; font-weight:700; font-size: 16px;">Comparativo Anual (Disparos, Débitos, Pagos)</h3>
+                        <div class="chart-canvas-wrapper" style="position: relative; height: 340px; width: 100%;">
+                            <canvas id="chart-jur-anual"></canvas>
+                        </div>
                     </div>
 
-                    <div class="chart-card" style="background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.05);">
-                        <h3 style="color:#0d47a1; margin-bottom:15px;">Comparativo Anual (Disparos, Débitos, Pagos)</h3>
-                        <canvas id="chart-jur-anual"></canvas>
-                    </div>
                 </div>
             </div>
 
@@ -487,6 +621,7 @@
                 </div>
 
                 <button class="import-btn admin-only" onclick="window.openImportModalJuridico()">📥 Importar</button>
+                <button onclick="window.exportJuridicoNoInteraction()" class="btn-export" style="background-color: #198754; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">📊 Exportar</button>
             </div>
 
             <div id="juridico-ligacoes-list" class="cards-container"></div>
@@ -565,61 +700,66 @@
             </div>
 
             <div id="tab-escala" class="tab-content hidden">
-                <h1>ESCALA MENSAL DE COBRANÇA</h1>
+                <div class="page-header-standard">
+                    <h1 class="page-title-blue">ESCALA MENSAL DE COBRANÇA</h1>
+                    <div class="header-line"></div>
+                </div>
 
-                <!-- Botão para abrir modo edição -->
-                <button id="btn-open-editor"
-                    class="action-btn-edit admin-only"
-                    onclick="window.openEscalaEditor()"
-                    style="margin: 20px 0; padding: 10px 20px; background:#f4b100; border-radius:8px; border:none; cursor:pointer;">
-                    ✏️ Editar Escala
-                </button>
-
-                <!-- ÁREA DE EDIÇÃO (sidebar + tabela) -->
-                <div id="escala-editor-wrapper" style="display:none;">
-
-                    <button id="btn-close-editor"
-                        onclick="window.closeEscalaEditor()"
-                        style="margin-bottom: 20px; padding: 10px 20px; background:#bbb; border-radius:8px; border:none; cursor:pointer;">
-                        ← Voltar à Visualização
+                <div class="escala-navigation-card">
+                    <button class="nav-month-btn" onclick="window.changeEscalaMonth(-1)">
+                        <i class="fas fa-chevron-left"></i>
                     </button>
+                    <div class="month-info">
+                        <i class="fas fa-calendar-alt"></i>
+                        <span id="escala-month-label" class="month-display">Carregando...</span>
+                    </div>
+                    <button class="nav-month-btn" onclick="window.changeEscalaMonth(1)">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
 
-                    <div class="escala-wrapper">
+                <div class="action-bar-center">
+                    <button id="btn-open-editor" class="btn-primary-medcof admin-only" onclick="window.openEscalaEditor()">
+                        <i class="fas fa-edit"></i> EDITAR ESCALA
+                    </button>
+                </div>
 
-                        <aside class="escala-sidebar">
-                            <div class="card equipe-card">
-                                <h3>👥 Equipe</h3>
-                                <div id="employees-list" style="max-height: 400px; overflow-y: auto; margin-top: 10px;"></div>
+                <div id="escala-editor-wrapper" class="escala-drawer hidden">
+                    <div class="drawer-header-escala">
+                        <div class="header-left-group">
+                            <button onclick="window.closeEscalaEditor()" class="btn-exit-editor">
+                                <i class="fas fa-arrow-left"></i> Voltar
+                            </button>
+                            <button onclick="window.toggleEscalaSidebar()" class="btn-toggle-sidebar" title="Recolher Equipe">
+                                <i class="fas fa-users-slash" id="sidebar-toggle-icon"></i>
+                            </button>
+                        </div>
+                        <div class="editor-quick-tools">
+                            <button onclick="window.openFolgaConfigurator()" class="btn-tool-modern folga"><i class="fas fa-umbrella-beach"></i> Folga</button>
+                            <button onclick="window.openHolidayConfigurator()" class="btn-tool-modern feriado"><i class="fas fa-star"></i> Feriados</button>
+                            <button onclick="window.menuFerias()" class="btn-tool-modern ferias"><i class="fas fa-plane"></i> Férias</button>
+                            <button onclick="window.openCycleConfigurator()" class="btn-tool-modern config"><i class="fas fa-sync"></i> Ciclos</button>
+                            <button onclick="window.autoFillCycle()" class="btn-tool-modern magic"><i class="fas fa-wand-magic-sparkles"></i> Auto Ciclo</button>
+                        </div>
+                    </div>
+
+                    <div class="escala-editor-layout">
+                        <aside id="escala-sidebar-staff" class="escala-sidebar">
+                            <div class="staff-card">
+                                <h3>EQUIPE</h3>
+                                <div id="employees-list" class="staff-list-scroll"></div>
                             </div>
                         </aside>
-
-                        <div class="escala-main-area">
-                            <div class="escala-controls">
-                                <button id="prev-month" onclick="window.changeEscalaMonth(-1)">◀</button>
-                                <span id="escala-month-label" class="month-label"></span>
-                                <button id="next-month" onclick="window.changeEscalaMonth(1)">▶</button>
-
-                                <div class="separator"></div>
-                                <button onclick="window.openHolidayConfigurator()" style="background-color: #9b59b6; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">📅 Feriados</button>
-                                <button onclick="window.openVacationConfigurator()" style="background-color: #e67e22; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">🏖️ Marcar Férias</button>
-                                <button onclick="window.openCycleConfigurator()" style="background-color: #5dade2; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">⚙️ Configurar Ciclos</button>        
-                                <button onclick="window.autoFillCycle()" style="background-color: #27ae60; color: white; margin-left: 10px; border:none; padding:8px 15px; border-radius:5px; cursor:pointer;">✨ Auto Ciclo (Geral)</button>
-                            </div>
-
-                            <div id="escala-message" style="margin: 10px 0; font-weight: bold; min-height: 20px;"></div>
-
-                            <!-- AQUI A TABELA É RENDERIZADA -->
-                            <div id="escala-container" class="escala-table-wrapper"></div>
-
-                        </div>
+                        <main class="escala-main-content">
+                            <div id="escala-message"></div>
+                            <div id="escala-container"></div> 
+                        </main>
                     </div>
                 </div>
 
-                <!-- VISUALIZAÇÃO (somente leitura) -->
                 <div id="escala-view-container">
                     <div id="escala-view-content"></div> 
                 </div>
-                <div id="escala-editor-wrapper" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -673,6 +813,13 @@
                     </div>
                     <div class="payment-panel">
                         <h3>Registrar Pagamento</h3>
+                        
+                        <div id="payment-course-selection" style="margin-bottom: 15px; background: rgba(255,255,255,0.5); padding: 10px; border-radius: 6px; border: 1px solid #ffeeba;">
+                            <p style="font-size: 12px; font-weight: bold; margin-bottom: 8px; color: #856404;">Selecione o(s) curso(s) pago(s):</p>
+                            <div id="course-checkbox-list">
+                                </div>
+                        </div>
+
                         <div class="payment-controls">
                             <input type="date" id="payment-date">
                             <select id="payment-origin">
