@@ -1,17 +1,74 @@
 // js/dashboard_juridico.js
 import { db } from "./firebase.js";
 import { collection, doc, setDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { Chart, registerables } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/+esm';
+import ChartDataLabels from 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/+esm';
+
+// 1. REGISTRO OBRIGATÓRIO (Garante que o plugin exista)
+Chart.register(...registerables, ChartDataLabels);
 
 const DASH_COLLECTION = "dashboard_juridico";
 
-// Variáveis globais para os gráficos (para poder destruir e recriar)
 let chartFunil = null;
 let chartRecup = null;
 let chartHist = null;
 let chartAnual = null;
 
+// --- CONFIGURAÇÃO DE RÓTULOS (A SOLUÇÃO DEFINITIVA) ---
+// Isso força o rótulo a ficar NO TOPO e CENTRALIZADO na coluna
+const FORCE_LABELS = {
+    display: true,
+    anchor: 'end',      // Fixa na ponta final da barra
+    align: 'end',       // Empurra para fora da barra (pra cima)
+    offset: -5,         // Pequeno ajuste para não colar na borda
+    color: '#444',      // Cor escura para contraste
+    textAlign: 'center',
+    font: { 
+        weight: 'bold', 
+        size: 11, 
+        family: 'Arial' 
+    },
+    clip: false,        // PERMITE que o rótulo saia do gráfico se precisar
+    clamp: false        // Não tenta forçar o rótulo para dentro
+};
+
 // ======================================================
-// 1. IMPORTAÇÃO DE DADOS
+// 0. INICIALIZAÇÃO
+// ======================================================
+export function initJuridicoDashboard() {
+    fixHtmlStructure(); 
+    initJuridicoListeners();
+    loadJuridicoDashboard();
+}
+
+function fixHtmlStructure() {
+    const ids = ['chart-jur-funil', 'chart-jur-recuperacao', 'chart-jur-historico', 'chart-jur-anual'];
+    ids.forEach(id => {
+        const canvas = document.getElementById(id);
+        if (canvas) {
+            // Limpa estilos inline que possam atrapalhar
+            canvas.style.cssText = "width: 100%; height: 100%;";
+            
+            const parent = canvas.parentElement;
+            if (!parent.classList.contains('chart-canvas-wrapper')) {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'chart-canvas-wrapper';
+                parent.replaceChild(wrapper, canvas);
+                wrapper.appendChild(canvas);
+            }
+        }
+    });
+}
+
+function initJuridicoListeners() {
+    const startInput = document.getElementById('dash-jur-start');
+    const endInput = document.getElementById('dash-jur-end');
+    if(startInput) startInput.onchange = () => loadJuridicoDashboard();
+    if(endInput) endInput.onchange = () => loadJuridicoDashboard();
+}
+
+// ======================================================
+// 1. IMPORTAÇÃO
 // ======================================================
 export function openImportDashJuridico() {
     document.getElementById('modal-import-dash-juridico').classList.remove('modal-hidden');
@@ -23,13 +80,7 @@ export async function processImportDashJuridico() {
 
     const lines = text.trim().split('\n');
     let count = 0;
-
-    // Helper para limpar moeda (R$ 1.000,00 -> 1000.00)
-    const cleanMoney = (val) => {
-        if (!val) return 0;
-        return parseFloat(val.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0;
-    };
-    // Helper para limpar inteiros
+    const cleanMoney = (val) => (!val ? 0 : parseFloat(val.replace('R$', '').replace(/\./g, '').replace(',', '.').trim()) || 0);
     const cleanInt = (val) => parseInt(val?.replace(/\./g, '').trim()) || 0;
 
     Swal.fire({ title: 'Importando...', didOpen: () => Swal.showLoading() });
@@ -37,336 +88,288 @@ export async function processImportDashJuridico() {
     try {
         const batchPromises = lines.map(async (line) => {
             const cols = line.split('\t');
-            if (cols.length < 2) return; // Linha vazia ou inválida
-
-            // Mapeamento das colunas conforme seu pedido
-            // 0: Data, 1: Disparos, 2: Débitos, 3: Interações, 4: Negociações (Infobip), 
-            // 5: Acordos (Infobip), 6: Pagamentos, 7: Neg. Email, 8: Acordos Email, 
-            // 9: Cancelamentos, 10: Rec. Perdida, 11: Termos
-            
-            const rawDate = cols[0].trim(); // Esperado DD/MM/AAAA
-            // Converter data para YYYY-MM-DD para usar como ID e ordenação
+            if (cols.length < 2) return;
+            const rawDate = cols[0].trim();
             const parts = rawDate.split('/');
-            const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`; // YYYY-MM-DD
-
+            if(parts.length !== 3) return; 
+            const isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            
             const docData = {
-                date: isoDate, // ID e Filtro
-                displayDate: rawDate,
-                disparos: cleanInt(cols[1]),
-                debitos: cleanMoney(cols[2]),
-                interacoes: cleanInt(cols[3]),
-                negociacoesInfo: cleanInt(cols[4]),
-                acordosInfo: cleanInt(cols[5]),
-                pagamentos: cleanMoney(cols[6]),
-                negociacoesEmail: cleanInt(cols[7]),
-                acordosEmail: cleanInt(cols[8]),
-                cancelamentos: cleanInt(cols[9]),
-                receitaPerdida: cleanMoney(cols[10]),
+                date: isoDate, displayDate: rawDate,
+                disparos: cleanInt(cols[1]), debitos: cleanMoney(cols[2]),
+                interacoes: cleanInt(cols[3]), negociacoesInfo: cleanInt(cols[4]),
+                acordosInfo: cleanInt(cols[5]), pagamentos: cleanMoney(cols[6]),
+                negociacoesEmail: cleanInt(cols[7]), acordosEmail: cleanInt(cols[8]),
+                cancelamentos: cleanInt(cols[9]), receitaPerdida: cleanMoney(cols[10]),
                 termos: cleanInt(cols[11])
             };
-
-            // Usa a data ISO como ID para evitar duplicidade no mesmo dia
             await setDoc(doc(db, DASH_COLLECTION, isoDate), docData);
             count++;
         });
-
         await Promise.all(batchPromises);
-
         document.getElementById('modal-import-dash-juridico').classList.add('modal-hidden');
         Swal.fire('Sucesso!', `${count} registros importados.`, 'success');
-        loadJuridicoDashboard(); // Atualiza a tela
-
+        loadJuridicoDashboard();
     } catch (error) {
-        console.error(error);
-        Swal.fire('Erro', 'Falha na importação. Verifique o formato.', 'error');
+        console.error(error); Swal.fire('Erro', 'Falha na importação.', 'error');
     }
 }
 
 // ======================================================
-// 2. CARREGAMENTO E FILTROS
+// 2. CARREGAMENTO DE DADOS
 // ======================================================
 export async function loadJuridicoDashboard() {
-    // Datas do Filtro
-    const startVal = document.getElementById('dash-jur-start').value;
-    const endVal = document.getElementById('dash-jur-end').value;
+    fixHtmlStructure(); 
+    
+    const startInput = document.getElementById('dash-jur-start');
+    const endInput = document.getElementById('dash-jur-end');
 
-    if (!startVal || !endVal) {
-        // Padrão: Mês atual
+    if (!startInput || !endInput) return;
+
+    if (!startInput.value || !endInput.value) {
         const now = new Date();
         const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
         const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-        document.getElementById('dash-jur-start').value = firstDay;
-        document.getElementById('dash-jur-end').value = lastDay;
-        return loadJuridicoDashboard(); // Recarrega com datas padrão
+        startInput.value = firstDay; endInput.value = lastDay;
+        if(startInput.value) return loadJuridicoDashboard();
     }
 
     try {
-        // Busca TUDO (pois precisamos de histórico para alguns gráficos) e filtra em memória
-        // O Firestore é rápido o suficiente para alguns milhares de registros.
         const q = query(collection(db, DASH_COLLECTION), orderBy("date", "asc"));
         const snapshot = await getDocs(q);
-        
         const allData = [];
         snapshot.forEach(doc => allData.push(doc.data()));
-
-        // Dados Filtrados (para KPIs e Gráficos de período)
-        const filteredData = allData.filter(d => d.date >= startVal && d.date <= endVal);
+        const filteredData = allData.filter(d => d.date >= startInput.value && d.date <= endInput.value);
 
         renderKPIs(filteredData);
-        renderCharts(filteredData, allData, startVal);
+        setTimeout(() => { renderCharts(filteredData, allData, startInput.value); }, 50);
+    } catch (error) { console.error("Erro dashboard:", error); }
+}
 
-    } catch (error) {
-        console.error("Erro dashboard:", error);
+function renderKPIs(data) {
+    let t = { deb:0, pag:0, disp:0, canc:0, rec:0, nEmail:0, aEmail:0, nInfo:0, aInfo:0, term:0 };
+    data.forEach(d => {
+        t.deb+=Number(d.debitos||0); t.pag+=Number(d.pagamentos||0); t.disp+=Number(d.disparos||0); t.canc+=Number(d.cancelamentos||0);
+        t.rec+=Number(d.receitaPerdida||0); t.nEmail+=Number(d.negociacoesEmail||0); t.aEmail+=Number(d.acordosEmail||0);
+        t.nInfo+=Number(d.negociacoesInfo||0); t.aInfo+=Number(d.acordosInfo||0); t.term+=Number(d.termos||0);
+    });
+
+    const percRec = t.deb>0 ? ((t.pag/t.deb)*100).toFixed(2) : "0.00";
+    const fmt = (v) => v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+    const icon = '<span style="font-size:14px; margin-right:4px;">💬</span>';
+
+    const cards = [
+        { l:"💰 DÉBITO", v:fmt(t.deb), c:"#333" }, 
+        { l:"✅ PAGAMENTO", v:fmt(t.pag), c:"#28a745" },
+        { l:"📊 % RECUP.", v:percRec+"%", c:"#0d47a1" }, 
+        { l:"🚀 DISPAROS", v:t.disp, c:"#e65100" },
+        { l:"🚫 CANC.", v:t.canc, c:"#c62828" }, 
+        { l:"💸 REC. PERDIDA", v:fmt(t.rec), c:"#c62828" },
+        { l:"📧 NEG. EMAIL", v:t.nEmail, c:"#555" }, 
+        { l:"🤝 ACORD. EMAIL", v:t.aEmail, c:"#555" },
+        { l:`${icon} NEG. INFOBIP`, v:t.nInfo, c:"#f16925" }, 
+        { l:`${icon} ACORD. INFOBIP`, v:t.aInfo, c:"#f16925" },
+        { l:"📄 TERMOS", v:t.term, c:"#555" }
+    ];
+
+    const container = document.getElementById('juridico-kpi-container');
+    if(container) {
+        container.innerHTML = cards.map(c => `
+            <div class="kpi-card-jur" style="border-left-color: ${c.c};">
+                <div class="kpi-label">${c.l}</div>
+                <div class="kpi-value">${c.v}</div>
+            </div>
+        `).join('');
     }
 }
 
 // ======================================================
-// 3. RENDERIZAÇÃO DOS KPIS
-// ======================================================
-function renderKPIs(data) {
-    // Acumuladores
-    let totalDebito = 0;
-    let totalPago = 0;
-    let totalDisparos = 0;
-    let totalCanc = 0;
-    let totalRecPerdida = 0;
-    let totalNegEmail = 0;
-    let totalAcordoEmail = 0;
-    let totalNegInfo = 0;
-    let totalAcordoInfo = 0;
-    let totalTermos = 0;
-
-    data.forEach(d => {
-        totalDebito += d.debitos;
-        totalPago += d.pagamentos;
-        totalDisparos += d.disparos;
-        totalCanc += d.cancelamentos;
-        totalRecPerdida += d.receitaPerdida;
-        totalNegEmail += d.negociacoesEmail;
-        totalAcordoEmail += d.acordosEmail;
-        totalNegInfo += d.negociacoesInfo;
-        totalAcordoInfo += d.acordosInfo;
-        totalTermos += d.termos;
-    });
-
-    const percRecuperado = totalDebito > 0 ? ((totalPago / totalDebito) * 100).toFixed(2) : "0.00";
-    const percConv = totalDisparos > 0 ? (((totalNegInfo + totalNegEmail) / totalDisparos) * 100).toFixed(2) : "0.00"; // Exemplo de conversão
-
-    const fmtMoney = (v) => v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-
-    // --- ALTERAÇÃO AQUI ---
-    // HTML para o ícone da Infobip (ajustado para alinhar com o texto)
-    const iconInfobip = '<img src="infobip-icon.png" alt="ícone infobip" style="height: 14px; width: auto; vertical-align: text-bottom; margin-right: 4px;">';
-
-    // Definição dos Cards
-    const cards = [
-        { label: "💰 Débito", val: fmtMoney(totalDebito), color: "#333" },
-        { label: "✅ Pagamento", val: fmtMoney(totalPago), color: "#28a745" },
-        { label: "📊 % Recup.", val: `${percRecuperado}%`, color: "#0d47a1" },
-        { label: "🚀 Disparos", val: totalDisparos, color: "#e65100" },
-        { label: "🚫 Canc.", val: totalCanc, color: "#c62828" },
-        { label: "💸 Rec. Perdida", val: fmtMoney(totalRecPerdida), color: "#c62828" },
-        { label: "📧 Neg. Email", val: totalNegEmail, color: "#555" },
-        { label: "🤝 Acord. Email", val: totalAcordoEmail, color: "#555" },
-        
-        // --- NOVOS CARDS INFOBIP COM ÍCONE E COR LARANJA ---
-        { label: `${iconInfobip} Neg. Infobip`, val: totalNegInfo, color: "#f16925" },
-        { label: `${iconInfobip} Acord. Infobip`, val: totalAcordoInfo, color: "#f16925" },
-        
-        { label: "📄 Termos", val: totalTermos, color: "#555" }
-    ];
-
-    const container = document.getElementById('juridico-kpi-container');
-    container.innerHTML = cards.map(c => `
-        <div style="background:white; padding:15px; border-radius:8px; border-left: 4px solid ${c.color}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-            <div style="font-size:12px; color:#777; font-weight:bold; text-transform:uppercase;">${c.label}</div>
-            <div style="font-size:18px; font-weight:800; color:#333; margin-top:5px;">${c.val}</div>
-        </div>
-    `).join('');
-}
-
-// ======================================================
-// 4. GRÁFICOS (CHART.JS)
+// 4. GRÁFICOS (IMPLEMENTAÇÃO CORRIGIDA)
 // ======================================================
 function renderCharts(filteredData, allData, startDateStr) {
-    // --- GRÁFICO 1: FUNIL (Disparos -> Negociações -> Acordos) ---
-    // Somamos os dados filtrados
-    const sumDisparos = filteredData.reduce((a, b) => a + b.disparos, 0);
-    const sumNegoc = filteredData.reduce((a, b) => a + b.negociacoesInfo + b.negociacoesEmail, 0);
-    const sumAcordos = filteredData.reduce((a, b) => a + b.acordosInfo + b.acordosEmail, 0);
+    const fmtMoney = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    const fmtInt = (v) => new Intl.NumberFormat('pt-BR').format(v);
+    const fmtCompactMoney = (v) => "R$ " + new Intl.NumberFormat('pt-BR', { notation: "compact", compactDisplay: "short" }).format(v);
 
-    const ctxFunil = document.getElementById('chart-jur-funil').getContext('2d');
-    if (chartFunil) chartFunil.destroy();
+    // --- 1. FUNIL ---
+    const sDisp = filteredData.reduce((a,b)=>a+Number(b.disparos||0),0);
+    const sNeg = filteredData.reduce((a,b)=>a+Number(b.negociacoesInfo||0)+Number(b.negociacoesEmail||0),0);
+    const sAco = filteredData.reduce((a,b)=>a+Number(b.acordosInfo||0)+Number(b.acordosEmail||0),0);
+    const txNeg = sDisp > 0 ? ((sNeg / sDisp) * 100).toFixed(1) + '%' : '0%';
+    const txAco = sDisp > 0 ? ((sAco / sDisp) * 100).toFixed(1) + '%' : '0%';
 
-    chartFunil = new Chart(ctxFunil, {
-        type: 'bar',
-        data: {
-            labels: ['Disparos', 'Negociações', 'Acordos'],
-            datasets: [{
-                label: 'Volume',
-                data: [sumDisparos, sumNegoc, sumAcordos],
-                backgroundColor: ['#e65100', '#0288d1', '#28a745'],
-                borderRadius: 5
-            }]
+    createChart('chart-jur-funil', 'bar', {
+        labels: ['Disparos', 'Negociações', 'Acordos'],
+        datasets: [{ 
+            label: 'Volume', data: [sDisp, sNeg, sAco], 
+            backgroundColor: ['#e65100', '#0288d1', '#28a745'], 
+            borderRadius: 6, barPercentage: 0.6 
+        }]
+    }, { 
+        indexAxis: 'x', 
+        layout: { padding: { top: 40 } }, // Padding extra no topo
+        plugins: { 
+            legend: { display: false },
+            // APLICA A CONFIGURAÇÃO DE FORÇA BRUTA
+            datalabels: {
+                ...FORCE_LABELS,
+                formatter: (value) => value > 0 ? fmtInt(value) : ''
+            },
+            tooltip: { callbacks: { label: (c) => `Qtd: ${c.raw}`, afterLabel: (c) => (c.label==='Negociações' ? `Conv: ${txNeg}` : c.label==='Acordos' ? `Conv: ${txAco}` : '') } }
         },
-        options: {
-            indexAxis: 'y', // Barra Horizontal
-            plugins: { legend: { display: false } }
-        }
+        scales: { 
+            x: { grid: { display: false } }, 
+            y: { beginAtZero: true, display: false } // Esconde eixo Y para limpar visual
+        } 
     });
 
-    // --- GRÁFICO 2: COMPARATIVO RECUPERAÇÃO (ACUMULADO) ---
-    // Comparar Mês Atual (Filtro) vs Mês Anterior
-    // Precisamos calcular a data do mês anterior baseada no filtro startVal
-    const currentStart = new Date(startDateStr);
-    const prevStart = new Date(currentStart);
-    prevStart.setMonth(prevStart.getMonth() - 1);
-    const prevStartStr = prevStart.toISOString().split('T')[0];
-    const prevEndStr = new Date(prevStart.getFullYear(), prevStart.getMonth() + 1, 0).toISOString().split('T')[0];
+    // --- 2. RECUPERAÇÃO ---
+    const currStart = new Date(startDateStr);
+    const prevMonthDate = new Date(currStart); prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+    const prevStartStr = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1).toISOString().split('T')[0];
+    const prevEndStr = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0).toISOString().split('T')[0];
 
     const prevData = allData.filter(d => d.date >= prevStartStr && d.date <= prevEndStr);
+    const currentData = filteredData;
 
-    // Gerar labels (Dias 1 a 31)
-    const labelsDays = Array.from({length: 31}, (_, i) => i + 1);
-    
-    // Função para acumular valores por dia do mês
-    const getAccumulatedData = (dataset) => {
-        let acc = 0;
-        const result = new Array(31).fill(null); // Null para não desenhar linha se não tiver dia
-        
-        // Agrupa por dia (1 a 31)
-        const dayMap = {};
+    const getWeeklyAccumulated = (dataset, isFullMonth) => {
+        const weeklyData = [0, 0, 0, 0, 0];
+        let totalAcumulado = 0;
+        const daySums = {};
         dataset.forEach(d => {
             const day = parseInt(d.date.split('-')[2]);
-            if(!dayMap[day]) dayMap[day] = 0;
-            dayMap[day] += d.pagamentos;
+            daySums[day] = (daySums[day] || 0) + Number(d.pagamentos || 0);
         });
-
-        let currentSum = 0;
-        for(let i=1; i<=31; i++) {
-            if (dayMap[i] !== undefined) {
-                currentSum += dayMap[i];
-                result[i-1] = currentSum;
-            } else if (i < dataset.length) { // Preencher gaps simples
-               // result[i-1] = currentSum; // Opcional: manter linha reta
-            }
+        for (let day = 1; day <= 31; day++) {
+            if (daySums[day]) totalAcumulado += daySums[day];
+            let weekIndex = -1;
+            if (day <= 7) weekIndex = 0; else if (day <= 14) weekIndex = 1; else if (day <= 21) weekIndex = 2; else if (day <= 28) weekIndex = 3; else weekIndex = 4;                
+            if (isFullMonth) weeklyData[weekIndex] = totalAcumulado;
+            else if (daySums[day] !== undefined || day <= new Date().getDate()) weeklyData[weekIndex] = totalAcumulado;
         }
-        // Remove nulls do final para o gráfico parar hoje
-        return result.filter(v => v !== null); 
+        if (!isFullMonth) {
+            const today = new Date().getDate();
+            const currentWeek = Math.ceil(today / 7) - 1; 
+            return weeklyData.filter((val, index) => index <= currentWeek || val > 0);
+        }
+        return weeklyData;
     };
 
-    const dataCurrent = getAccumulatedData(filteredData);
-    const dataPrev = getAccumulatedData(prevData);
-
-    const ctxRecup = document.getElementById('chart-jur-recuperacao').getContext('2d');
-    if (chartRecup) chartRecup.destroy();
-
-    chartRecup = new Chart(ctxRecup, {
-        type: 'line',
-        data: {
-            labels: labelsDays,
-            datasets: [
-                {
-                    label: 'Atual',
-                    data: dataCurrent,
-                    borderColor: '#0d47a1',
-                    backgroundColor: 'rgba(13, 71, 161, 0.1)',
-                    fill: true,
-                    tension: 0.4
-                },
-                {
-                    label: 'Mês Anterior',
-                    data: dataPrev,
-                    borderColor: '#ffca28',
-                    borderDash: [5, 5],
-                    fill: false,
-                    tension: 0.4
+    createChart('chart-jur-recuperacao', 'line', {
+        labels: ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4', 'Semana 5'],
+        datasets: [
+            { 
+                label: 'Mês Atual', data: getWeeklyAccumulated(currentData, false), 
+                borderColor: '#0d47a1', backgroundColor: 'rgba(13, 71, 161, 0.1)', 
+                fill: true, tension: 0.4, borderWidth: 3, pointRadius: 4,
+                datalabels: {
+                    ...FORCE_LABELS,
+                    align: 'top', anchor: 'center', offset: 8,
+                    color: '#0d47a1',
+                    formatter: (value) => value > 0 ? fmtCompactMoney(value) : ''
                 }
-            ]
-        },
-        options: {
-            plugins: { tooltip: { mode: 'index', intersect: false } },
-            scales: { y: { beginAtZero: true } }
+            },
+            { 
+                label: 'Mês Anterior', data: getWeeklyAccumulated(prevData, true), 
+                borderColor: '#adb5bd', borderDash: [5, 5], 
+                fill: false, tension: 0.4, borderWidth: 2, pointRadius: 0,
+                datalabels: { display: false } 
+            }
+        ]
+    }, { 
+        interaction: { mode: 'index', intersect: false }, 
+        layout: { padding: { top: 30 } },
+        scales: { 
+            y: { beginAtZero: true, ticks: { callback: fmtMoney }, grid: { color: '#f0f0f0' } },
+            x: { grid: { display: false } }
         }
     });
 
-
-    // --- GRÁFICO 3: VARIAÇÃO DE DISPAROS (HISTÓRICO) ---
-    // Ignora filtro, pega últimos 12 meses
-    // Agrupar allData por Mês (YYYY-MM)
-    const mapMonths = {};
-    allData.forEach(d => {
-        const key = d.date.substring(0, 7); // YYYY-MM
-        if(!mapMonths[key]) mapMonths[key] = 0;
-        mapMonths[key] += d.disparos;
-    });
-    
-    // Ordenar chaves e pegar ultimas 12
-    const sortedMonths = Object.keys(mapMonths).sort().slice(-12);
-    const histValues = sortedMonths.map(m => mapMonths[m]);
-
-    const ctxHist = document.getElementById('chart-jur-historico').getContext('2d');
-    if (chartHist) chartHist.destroy();
-
-    chartHist = new Chart(ctxHist, {
-        type: 'bar',
-        data: {
-            labels: sortedMonths, // Ex: 2024-11, 2024-12
-            datasets: [{
-                label: 'Disparos',
-                data: histValues,
-                backgroundColor: '#0288d1'
-            }]
+    // --- 3. HISTÓRICO ---
+    const mapM={}; allData.forEach(d=>{ const k=d.date.substring(0,7); mapM[k]=(mapM[k]||0)+Number(d.disparos||0); });
+    const sortM=Object.keys(mapM).sort().slice(-12);
+    createChart('chart-jur-historico', 'bar', {
+        labels: sortM, 
+        datasets:[{ 
+            label:'Disparos', data:sortM.map(m=>mapM[m]), 
+            backgroundColor:'#0288d1', borderRadius:4, barPercentage: 0.6
+        }]
+    }, { 
+        layout: { padding: { top: 40 } },
+        scales:{x:{grid:{display:false}}, y: { display: false }},
+        plugins: {
+            legend: { display: false },
+            datalabels: { ...FORCE_LABELS, formatter: (value) => value > 0 ? fmtInt(value) : '' }
         }
     });
 
-    // --- GRÁFICO 4: COMPARATIVO ANUAL (2024 x 2025) ---
-    // Soma totais por ano
-    const stats2024 = { disp:0, deb:0, pag:0 };
-    const stats2025 = { disp:0, deb:0, pag:0 };
+    // --- 4. COMPARATIVO ANUAL ---
+    const titleEl = document.querySelector('#chart-jur-anual')?.closest('.chart-card')?.querySelector('h3');
+    if(titleEl) titleEl.innerText = "Comparativo Q4 (Out-Dez) 2024 vs 2025";
 
-    allData.forEach(d => {
-        const year = d.date.substring(0, 4);
-        if (year === '2024') {
-            stats2024.disp += d.disparos;
-            stats2024.deb += d.debitos;
-            stats2024.pag += d.pagamentos;
-        } else if (year === '2025') {
-            stats2025.disp += d.disparos;
-            stats2025.deb += d.debitos;
-            stats2025.pag += d.pagamentos;
+    const st={2024:{d:0,db:0,p:0}, 2025:{d:0,db:0,p:0}};
+    allData.forEach(d=>{ 
+        const dateParts = d.date.split('-'); 
+        const year = dateParts[0];
+        const month = parseInt(dateParts[1]); 
+        if (month >= 10 && st[year]) {
+            st[year].d += Number(d.disparos||0); 
+            st[year].db += Number(d.debitos||0); 
+            st[year].p += Number(d.pagamentos||0); 
         }
     });
 
-    const ctxAnual = document.getElementById('chart-jur-anual').getContext('2d');
-    if (chartAnual) chartAnual.destroy();
-
-    chartAnual = new Chart(ctxAnual, {
-        type: 'bar',
-        data: {
-            labels: ['Disparos', 'Débitos (R$)', 'Pagamentos (R$)'],
-            datasets: [
-                {
-                    label: '2024',
-                    data: [stats2024.disp, stats2024.deb, stats2024.pag],
-                    backgroundColor: '#bdc3c7'
-                },
-                {
-                    label: '2025',
-                    data: [stats2025.disp, stats2025.deb, stats2025.pag],
-                    backgroundColor: '#0d47a1'
+    createChart('chart-jur-anual', 'bar', {
+        labels: ['Disparos', 'Débitos', 'Pagamentos'],
+        datasets: [
+            { label: '2024', data: [st[2024].d, st[2024].db, st[2024].p], backgroundColor: '#bdc3c7', borderRadius: 5, barPercentage: 0.6 },
+            { label: '2025', data: [st[2025].d, st[2025].db, st[2025].p], backgroundColor: '#0d47a1', borderRadius: 5, barPercentage: 0.6 }
+        ]
+    }, { 
+        layout: { padding: { top: 40 } },
+        scales:{y:{type:'logarithmic', display: false}}, 
+        plugins: {
+            datalabels: {
+                ...FORCE_LABELS,
+                font: { weight: 'bold', size: 10, family: 'Arial' },
+                formatter: (value, context) => {
+                    if (value === 0) return '';
+                    if (context.dataIndex === 0) return fmtInt(value);
+                    if (value > 10000) return fmtCompactMoney(value);
+                    return fmtMoney(value);
                 }
-            ]
-        },
-        options: {
-            scales: {
-                y: { type: 'logarithmic' } // Escala logarítmica ajuda se Débitos for milhões e Disparos for centenas
             }
         }
     });
 }
 
-// Exporta globalmente
+function createChart(id, type, data, extraOpts={}) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return; 
+    const ctx = canvas.getContext('2d');
+    if(window['chart_'+id] instanceof Chart) window['chart_'+id].destroy();
+    
+    // Mescla configs, GARANTINDO que os plugins locais venham primeiro se necessário
+    // Mas aqui, como definimos 'datalabels' dentro de extraOpts.plugins lá em cima,
+    // o Chart.js já vai usar o que passamos.
+    
+    window['chart_'+id] = new Chart(ctx, {
+        type: type,
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            // AQUI ESTÁ O TRUQUE: Permitir plugins externos, mas com configs forçadas
+            plugins: {
+                legend: { position: 'top', align: 'end', labels: { boxWidth: 12, usePointStyle: true } },
+                ...extraOpts.plugins // Isso carrega o nosso FORCE_LABELS
+            },
+            ...extraOpts // Carrega scales e layout
+        }
+    });
+}
+
+window.initJuridicoDashboard = initJuridicoDashboard;
 window.openImportDashJuridico = openImportDashJuridico;
 window.processImportDashJuridico = processImportDashJuridico;
 window.loadJuridicoDashboard = loadJuridicoDashboard;

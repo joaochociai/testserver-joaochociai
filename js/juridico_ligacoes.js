@@ -441,3 +441,98 @@ window.filterJuridicoList = function() {
     
     renderJuridicoList(filtered);
 };
+
+// ==========================================
+// EXPORTAÇÃO EXCEL (PENDENTES SEM INTERAÇÃO)
+// ==========================================
+window.exportJuridicoNoInteraction = function() {
+    const horasCorte = 3; // Define o padrão de 3 horas
+    const agora = new Date();
+    const tempoCorte = new Date(agora.getTime() - (horasCorte * 60 * 60 * 1000));
+
+    // 1. Filtra a lista: Sem Tag E Sem envio de Template nas últimas 3h
+    const toExport = window.juridicoList.filter(item => {
+        // A. Verifica se possui Tag (StatusExtra)
+        const temTag = item.StatusExtra && item.StatusExtra.tipo && item.StatusExtra.tipo !== "";
+        if (temTag) return false;
+
+        // B. Verifica se houve algum template enviado DEPOIS do tempo de corte
+        const logs = item.HistoricoLogs || [];
+        const teveTemplateRecente = logs.some(log => {
+            if (log.tipo !== 'template') return false;
+            const dataLog = new Date(log.timestamp);
+            return dataLog > tempoCorte; // Se o log for mais novo que 3h atrás, retorna true
+        });
+
+        // Exporta apenas se NÃO tiver tag E NÃO tiver template recente
+        return !teveTemplateRecente;
+    });
+
+    if (toExport.length === 0) {
+        return alert(`Nenhum aluno pendente encontrado (Sem tag e sem template nas últimas ${horasCorte}h).`);
+    }
+
+    if(!confirm(`Deseja exportar ${toExport.length} alunos pendentes para Excel?`)) return;
+
+    // 2. Monta a estrutura da Tabela HTML
+    let table = `
+        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="UTF-8"></head>
+        <body>
+        <table border="1">
+            <thead>
+                <tr style="background-color: #0d6efd; color: white;">
+                    <th>NOME</th>
+                    <th>NUMERO (WHATSAPP)</th>
+                    <th>CPF</th>
+                    <th>E-MAIL</th>
+                    <th>CURSO</th>
+                    <th>TOTAL ABERTO</th>
+                    <th>VENCIMENTO</th>
+                    <th>DIAS ATRASO</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    toExport.forEach(item => {
+        // --- LÓGICA DE CORREÇÃO DO NÚMERO (13 DÍGITOS) ---
+        let phone = (item.Telefone || "").toString().replace(/\D/g, "");
+
+        // Se começa com 55 e não tem 13 dígitos, injeta o 9 após o 4º dígito (DDI + DDD)
+        if (phone.startsWith("55") && phone.length !== 13) {
+            const ddi_ddd = phone.substring(0, 4); 
+            const resto = phone.substring(4);      
+            phone = ddi_ddd + "9" + resto;         
+        }
+        // ------------------------------------------------
+
+        table += `
+            <tr>
+                <td>${item.Nome || '-'}</td>
+                <td style="mso-number-format:'@'">${phone || '-'}</td>
+                <td style="mso-number-format:'@'">${item.CPF || '-'}</td>
+                <td>${item.Email || '-'}</td>
+                <td>${item.Curso || '-'}</td>
+                <td>${item.TotalAberto || '-'}</td>
+                <td>${item.Vencimento || '-'}</td>
+                <td>${item.diasAtrasoCalculado || '-'}</td>
+            </tr>
+        `;
+    });
+
+    table += `</tbody></table></body></html>`;
+
+    // 3. Download do Arquivo .xls
+    const blob = new Blob([table], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    
+    a.href = url;
+    a.download = `Mailing_Juridico_Pendentes_3h_${hoje}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};

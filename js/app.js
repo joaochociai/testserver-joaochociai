@@ -1,9 +1,12 @@
 // js/app.js
-// App central: login, controle de setores, visibilidade de abas
+// App central: controle de setores, visibilidade de abas, carregamento de módulos
 
-import { auth, db } from "./firebase.js"; 
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { auth, db } from "./firebase.js";
+import './auth.js'; // Ativa o motor de segurança e inatividade
+import { signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+let currentTabId = null;
 
 // ---------- Variáveis globais ----------
 window.currentUserRole = "normal";
@@ -20,62 +23,53 @@ function applySectorVisibility(userDocData) {
 
   // 1. MENU LATERAL E BOTÕES
   document.querySelectorAll(".sector-group, .sector-btn").forEach(el => {
-    // Ignora se for elemento da Home para não conflitar
     if(el.classList.contains('home-sector-section')) return;
-
     const sectorName = el.dataset.sector;
-    if (!sectorName) {
-      el.style.display = "block";
-      return;
-    }
-    if (isAdmin || window.currentUserSectors.includes(sectorName)) {
-        el.style.display = "block";
-    } else {
-        el.style.display = "none";
-    }
+    if (!sectorName) { el.style.display = "block"; return; }
+    el.style.display = (isAdmin || window.currentUserSectors.includes(sectorName)) ? "block" : "none";
   });
 
   // 2. TELA INICIAL
   document.querySelectorAll(".home-sector-section").forEach(section => {
       const sectorName = section.dataset.sector;
-      if (isAdmin || window.currentUserSectors.includes(sectorName)) {
-          section.style.display = "block";
-      } else {
-          section.style.display = "none";
-      }
+      section.style.display = (isAdmin || window.currentUserSectors.includes(sectorName)) ? "block" : "none";
   });
 }
 
-// ---------- Login ----------
-const loginForm = document.getElementById("login-form");
-if (loginForm) {
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = document.getElementById("login-email").value.trim();
-    const password = document.getElementById("login-password").value;
-    const msg = document.getElementById("login-message");
-    
-    if (msg) { msg.textContent = "Autenticando..."; msg.style.color = "#007bff"; }
-
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.error("Erro login:", err);
-      if (msg) { msg.textContent = "Erro: e-mail ou senha inválidos"; msg.style.color = "#dc3545"; }
-    }
-  });
-}
-
-// ---------- Logout ----------
+// ---------- Logout Manual ----------
 window.logoutSystem = async function() {
     try {
+        sessionStorage.removeItem("SESSION_ACTIVE_FLAG");
         await signOut(auth);
-        console.log("Usuário deslogado.");
-        // Redireciona ou recarrega a página para voltar ao login
         window.location.reload(); 
     } catch (error) {
         console.error("Erro ao sair:", error);
-        alert("Erro ao tentar sair. Veja o console.");
+    }
+};
+
+window.updateHomeHeader = function() {
+    const userNameElement = document.getElementById('home-user-name');
+    const relogio = document.getElementById('live-clock');
+    const dataElement = document.getElementById('live-date');
+
+    // 1. Atualiza o nome se o dado existir
+    if (userNameElement && window.userDocData?.Nome) {
+        userNameElement.textContent = window.userDocData.Nome.split(' ')[0];
+    }
+
+    // 2. Inicia o relógio se os elementos estiverem na tela
+    if (relogio && dataElement) {
+        const atualizar = () => {
+            const agora = new Date();
+            relogio.textContent = agora.toLocaleTimeString('pt-BR');
+            dataElement.textContent = agora.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            });
+        };
+        atualizar();
+        setInterval(atualizar, 1000); // Atualiza a cada segundo
     }
 };
 
@@ -85,14 +79,12 @@ onAuthStateChanged(auth, async (user) => {
   const appContent = document.getElementById("app-content");
 
   if (!user) {
-    // Deslogado
     if (loginScreen) loginScreen.style.display = "flex";
     if (appContent) appContent.style.display = "none";
     document.body.classList.remove("is-admin");
     return;
   }
 
-  // Logado
   if (loginScreen) loginScreen.style.display = "none";
   if (appContent) appContent.style.display = "block";
 
@@ -103,85 +95,71 @@ onAuthStateChanged(auth, async (user) => {
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
       userDocData = userSnap.data();
+      
+      // --- INSERÇÃO AQUI ---
+      window.userDocData = userDocData; // Torna global para o cabeçalho usar
+      if (window.updateHomeHeader) window.updateHomeHeader(); // Dispara a atualização
+      // ---------------------
     }
   } catch (err) {
     console.error("Erro ao buscar permissões:", err);
   }
 
-  // === CORREÇÃO AQUI ===
-  // Define isAdmin no escopo principal da função, logo após ter os dados
-  // Assim ela fica disponível para todos os blocos try/catch abaixo.
   const isAdmin = userDocData?.role === "admin";
   const sectors = userDocData?.sectors || [];
 
   // 2) Aplica permissões visuais
   applySectorVisibility(userDocData);
+  if (isAdmin) document.body.classList.add("is-admin");
 
-  if (isAdmin) {
-    document.body.classList.add("is-admin");
-  }
-
-  // 3) Carrega os Módulos Dinamicamente
+  // 3) Carrega os Módulos Dinamicamente (Lazy Loading)
   try {
-    // Agenda (Sempre carrega)
     const agendaModule = await import('./agenda.js');
     if (agendaModule?.loadCalendarData) agendaModule.loadCalendarData();
 
-    // COBRANÇA
+    if (isAdmin) {
+    const userModule = await import('./usuarios.js');
+    window.loadUserListData = userModule.loadUserListData;
+    }
+
     if (isAdmin || sectors.includes("cobranca")) {
         const cobrancaModule = await import('./cobranca.js');
         if (cobrancaModule?.loadCobrancaData) cobrancaModule.loadCobrancaData();
-        
-        // Carrega Módulo de Escala
         await import('./escala.js');
     }
 
-    // JURÍDICO
     if (isAdmin || sectors.includes("juridico")) {
         const juridicoModule = await import('./juridico.js');
         if (juridicoModule?.initJuridicoForm) juridicoModule.initJuridicoForm();
         if (juridicoModule?.loadJuridicoData) juridicoModule.loadJuridicoData();
-        
-        // Ligações Jurídico
         await import('./juridico_ligacoes.js');
         if (window.loadJuridicoLigacoes) window.loadJuridicoLigacoes();
     }
 
-    // DASHBOARD (Exclusivo Admin)
     if (isAdmin) {
         const dashModule = await import('./dashboard.js');
-        // Se a aba já estiver visível (refresh), inicia
-        if (document.getElementById('tab-dashboard') && document.getElementById('tab-dashboard').style.display !== 'none') {
+        if (document.getElementById('tab-dashboard')?.style.display !== 'none') {
             dashModule.initDashboard();
         }
-        // Expõe globalmente para o showTab usar depois
         window.initDashboard = dashModule.initDashboard;
     }
-
   } catch (err) {
     console.error("ERRO ao carregar módulos:", err);
   }
 
-  // 4) ABRE A TELA INICIAL (DASHBOARD) OU HOME
+  // 4) Abre a aba inicial
   const homeBtn = document.getElementById("btn-home");
-  if (homeBtn) {
-      window.showTab('tab-home', homeBtn);
-  } else {
-      const firstBtn = document.querySelector(".nav-tab.sector-btn:not([style*='display: none'])");
-      if (firstBtn) {
-          const onclickAttr = firstBtn.getAttribute("onclick");
-          if (onclickAttr) {
-              const match = onclickAttr.match(/showTab\('([^']+)'/);
-              if (match && match[1]) {
-                  window.showTab(match[1], firstBtn);
-              }
-          }
-      }
-  }
+  if (homeBtn) window.showTab('tab-home', homeBtn);
 });
 
 // --- FUNÇÃO GLOBAL DE ABAS (COM LAZY LOADING) ---
 window.showTab = async function(tabId, clickedButton) {
+  // Limpeza antes de trocar de abas
+  if (currentTabId === 'tab-dashboard' && window.stopDashboard) {
+      window.stopDashboard(); // Para os listeners do Dashboard
+  }
+  currentTabId = tabId;
+  
   // 1. UI
   document.querySelectorAll(".nav-tab").forEach(btn => btn.classList.remove("active"));
   if (clickedButton) clickedButton.classList.add("active");
@@ -240,13 +218,11 @@ window.showTab = async function(tabId, clickedButton) {
         // 2. --- O PULO DO GATO ---
         // Chama a função que desenha a tabela de leitura (View Mode)
         setTimeout(() => {
-            if (typeof window.loadReadOnlyView === 'function') {
-                console.log("Carregando visualização de leitura...");
-                window.loadReadOnlyView();
-            } else {
-                console.warn("Função loadReadOnlyView não encontrada.");
-            }
-        }, 200); // Pequeno delay para garantir que o HTML da aba carregou
+        if (typeof window.loadReadOnlyView === 'function') {
+            console.log("Executando renderização padrão...");
+            window.loadReadOnlyView(); // Dispara a visualização
+        }
+        }, 300);
 
     } catch (error) { 
         console.error("Erro escala:", error); 

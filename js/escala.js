@@ -1,7 +1,7 @@
 // js/escala.js
 import { db, auth } from './firebase.js';
 import { 
-    doc, updateDoc, getDoc, setDoc, deleteDoc, getDocs, collection, query, where, writeBatch, serverTimestamp 
+    doc, updateDoc, getDoc, setDoc, deleteDoc, getDocs, collection, query, where, writeBatch, serverTimestamp, orderBy 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getCycleStage, ESCALA_CYCLE, NAME_MAPPING, normalizeText } from "./utils.js";
 
@@ -13,7 +13,8 @@ const TEAM_DOC_ID = "equipe_cobranca";
 let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth() + 1; // 1-12
 let employeeList = []; 
-let cachedEvents = []; // Armazena os dados individuais carregados
+let cachedEvents = [];
+let cachedHolidays = {};
 
 // ------------------------------------------------------------------
 // 1. CONFIGURAÇÕES E MAPEAMENTOS
@@ -64,16 +65,44 @@ const WEEKEND_ROWS = [
     { key: 'fds_12_18', label: '12h às 18h' }
 ];
 
+function renderNameWithRef(item, myNorm, normalize, highlightStyle = '') {
+    // Se não há referência (folga de feriado), retorna o nome simples
+    if (!item.ref) return item.nome;
+
+    const isMe = myNorm && normalize(item.nome) === myNorm;
+
+    // Estilo para o nome que possui referência
+    const style = `
+        cursor: help;
+        border-bottom: 2px dotted #c0392b;
+        color: #c0392b;
+        font-weight: 600;
+        ${isMe ? highlightStyle : ''}
+    `;
+
+    // Retorna a estrutura com o atributo de dados para o CSS
+    return `
+    <span class="tooltip-wrapper" data-tooltip="Folga ref. ao feriado de ${item.ref}">
+        <span style="${style}">
+            ${item.nome}
+        </span>
+    </span>
+    `;
+}
+
 // ------------------------------------------------------------------
 // 2. INICIALIZAÇÃO E CARREGAMENTO
 // ------------------------------------------------------------------
 
-export function initEscala() {
+export async function initEscala() {
     renderMonthLabel();
-    loadEmployeeList();
-    loadEscala(); // Carrega dados e renderiza
+    await loadHolidaysGlobal(); // 1. Carrega todos os feriados
+    loadEmployeeList();         
+    loadEscala();               
     
-    // Bind navigation buttons
+    // 2. Inicia o cálculo de folgas pendentes (fundo)
+    calculateYearlyCompOffs(); 
+
     const prev = document.getElementById('prev-month');
     if(prev) prev.onclick = () => changeEscalaMonth(-1);
     const next = document.getElementById('next-month');
@@ -83,8 +112,12 @@ export function initEscala() {
 function renderMonthLabel() {
     const date = new Date(currentYear, currentMonth - 1, 1);
     const name = date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+    
+    // Alvo: O span dentro do seu novo Navigation Card
     const label = document.getElementById('escala-month-label');
-    if(label) label.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    if (label) {
+        label.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    }
 }
 
 // CARREGAMENTO: Busca registros individuais e monta o GRID em memória
@@ -131,10 +164,169 @@ async function loadEscala() {
         
         // 4. Preenche os nomes (A Pintura)
         populateGridFromEvents();
+
+        checkHolidayCompOffs();
         
     } catch (err) {
         console.error("Erro loading:", err);
     }
+}
+
+async function loadHolidaysGlobal() {
+    try {
+        const q = query(collection(db, "feriados_config"));
+        const snapshot = await getDocs(q);
+        cachedHolidays = {};
+        snapshot.forEach(doc => cachedHolidays[doc.id] = doc.data());
+        window.feriadosCache = cachedHolidays; // Disponibiliza para a tabela pintar de laranja
+    } catch (e) { console.error("Erro feriados:", e); }
+}
+
+// 2. Calcula Folgas Pendentes (Busca Inteligente no Banco)
+// Substitua a função calculateYearlyCompOffs por esta versão AJUSTADA:
+
+async function calculateYearlyCompOffs() {
+    const auditData = {}; 
+    const today = new Date().toISOString().split('T')[0];
+    
+    try {
+        // A. Pega datas de feriados passados
+        const holidayDates = Object.keys(cachedHolidays).filter(date => date <= today);
+        
+        if (holidayDates.length > 0) {
+            const chunkSize = 10;
+            for (let i = 0; i < holidayDates.length; i += chunkSize) {
+                const chunk = holidayDates.slice(i, i + chunkSize);
+                
+                const qWork = query(collection(db, "escala_individual"), where("data", "in", chunk));
+                const snapWork = await getDocs(qWork);
+                
+                snapWork.forEach(doc => {
+                    const d = doc.data();
+                    
+                    // --- NOVA REGRA: IGNORAR SUPERVISORAS EM FINAL DE SEMANA ---
+                    // Converte string '2024-05-01' para objeto Data para saber o dia da semana
+                    // Adiciona 'T12:00' para evitar problemas de fuso horário (-3h)
+                    const dateObj = new Date(d.data + 'T12:00:00'); 
+                    const dayOfWeek = dateObj.getDay(); // 0=Dom, 6=Sab
+                    
+                    // Pega o perfil do funcionário (Ex: 'FIXO_SUPERVISOR1')
+                    // Usa o mapeamento reverso se o nome for curto
+                    const fullName = Object.entries(NAME_MAPPING).find(([k,v]) => k === d.nome)?.[1] || d.nome;
+                    const profile = EMPLOYEE_PROFILES[d.nome] || EMPLOYEE_PROFILES[fullName];
+
+                    // Se for Fim de Semana E o cargo for FIXO -> NÃO CONTA COMO PENDÊNCIA
+                    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+                    const isFixedRole = profile && profile.startsWith('FIXO_');
+
+                    if (isWeekend && isFixedRole) {
+                        return; // Pula este registro, não gera crédito de folga
+                    }
+                    // -----------------------------------------------------------
+
+                    // Se TRABALHOU (não é folga/ferias/fds_folga)
+                    if (d.cargoKey !== 'folga' && d.cargoKey !== 'ferias' && d.cargoKey !== 'fds_folga') {
+                        if (!auditData[d.nome]) auditData[d.nome] = { worked: [], taken: 0 };
+                        
+                        auditData[d.nome].worked.push({
+                            date: d.data,
+                            reason: cachedHolidays[d.data]?.nome || 'Feriado'
+                        });
+                    }
+                });
+            }
+        }
+
+        // B. Busca folgas tiradas no ano
+        const startYear = `${new Date().getFullYear()}-01-01`;
+        const qFolgas = query(
+            collection(db, "escala_individual"), 
+            where("data", ">=", startYear), 
+            where("cargoKey", "==", "folga")
+        );
+        const snapFolgas = await getDocs(qFolgas);
+        
+        snapFolgas.forEach(doc => {
+            const nome = doc.data().nome;
+            if (auditData[nome]) {
+                auditData[nome].taken++; 
+            }
+        });
+
+        // C. Atualiza Visual
+        updateSidebarBadges(auditData);
+
+    } catch (e) {
+        console.error("Erro calculando folgas:", e);
+    }
+}
+
+// Atualiza visualmente a sidebar
+function updateSidebarBadges(auditData) {
+    document.querySelectorAll('.employee-card').forEach(card => {
+        const nameEl = card.querySelector('.card-name');
+        if (!nameEl) return;
+        
+        const fullName = nameEl.innerText;
+        const shortName = fullName.split(' ')[0];
+        
+        // Tenta achar dados pelo nome
+        const userData = auditData[shortName] || auditData[fullName] || { worked: [], taken: 0 };
+        
+        // Cálculo: Trabalhados - Tirados
+        const pendingCount = userData.worked.length - userData.taken;
+        
+        let badge = card.querySelector('.comp-off-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'comp-off-badge';
+            const editBtn = card.querySelector('.edit-btn');
+            if(editBtn) card.insertBefore(badge, editBtn);
+            else card.appendChild(badge);
+        }
+        
+        if (pendingCount > 0) {
+            badge.innerText = `${pendingCount} Pend.`;
+            badge.classList.add('visible');
+            badge.style.cursor = 'pointer';
+            badge.title = "Clique para ver detalhes";
+            
+            // --- O PULO DO GATO: CLIQUE PARA VER DETALHES ---
+            badge.onclick = (e) => {
+                e.stopPropagation(); // Evita arrastar o card
+                showCompOffDetails(shortName, userData);
+            };
+            // ------------------------------------------------
+        } else {
+            badge.classList.remove('visible');
+            badge.onclick = null;
+        }
+    });
+}
+
+function showCompOffDetails(name, data) {
+    const workedList = data.worked.map(item => {
+        const [y, m, d] = item.date.split('-');
+        return `<li><b>${d}/${m}</b> - ${item.reason}</li>`;
+    }).join('');
+
+    const htmlContent = `
+        <div style="text-align: left; font-size: 14px;">
+            <p><strong>Feriados Trabalhados (${data.worked.length}):</strong></p>
+            <ul style="margin-bottom: 15px; padding-left: 20px; color: #c0392b;">
+                ${workedList || '<li>Nenhum encontrado</li>'}
+            </ul>
+            <p><strong>Folgas Tiradas no Ano:</strong> ${data.taken}</p>
+            <hr>
+            <p style="font-size: 16px;"><strong>Saldo Pendente: <span style="color:red">${data.worked.length - data.taken}</span></strong></p>
+        </div>
+    `;
+
+    Swal.fire({
+        title: `Extrato de Folgas: ${name}`,
+        html: htmlContent,
+        confirmButtonText: 'Entendi'
+    });
 }
 
 // ------------------------------------------------------------------
@@ -326,45 +518,45 @@ function createWeekBlock(container, dates) {
 }
 
 function generateTableHTML(dates, rows, isWeekend = false) {
-    let html = `<table class="escala-table ${isWeekend ? 'weekend-table' : ''}"><thead><tr>
-        <th class="${isWeekend ? 'col-horario-fds' : 'col-cargo'}">${isWeekend ? 'HORÁRIO' : 'CARGO'}</th>
-        ${!isWeekend ? '<th class="col-horario">HORÁRIO</th>' : ''}`;
+    let html = `<table class="escala-table-modern ${isWeekend ? 'weekend-table' : ''}">
+        <thead>
+            <tr>
+                <th class="${isWeekend ? 'col-horario-fds' : 'col-cargo'}">${isWeekend ? 'HORÁRIO' : 'CARGO'}</th>
+                ${!isWeekend ? '<th class="col-horario">HORÁRIO</th>' : ''}`;
     
     dates.forEach(d => {
         const dayName = d.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
         const isToday = d.toDateString() === new Date().toDateString();
+        // Classe today-header para destaque visual
         html += `<th class="${isToday ? 'today-header' : ''}">${dayName}<br><small>${d.getDate()}/${d.getMonth()+1}</small></th>`;
     });
+    
     html += `</tr></thead><tbody>`;
 
     rows.forEach(def => {
         if (def.type === 'header') {
-            html += `<tr class="${def.cssClass}"><td colspan="${dates.length + 2}">${def.label}</td></tr>`;
+            // Usa as classes header-manha/tarde do seu CSS para cores de fundo suaves
+            html += `<tr class="${def.cssClass}"><td colspan="${dates.length + (isWeekend ? 1 : 2)}">${def.label}</td></tr>`;
         } else {
             html += `<tr class="${def.cssClass}">
-                <td class="${isWeekend ? 'time-cell-fds' : 'cargo-cell'}">${def.label}</td>
+                <td class="${isWeekend ? 'time-cell-fds' : 'cargo-cell'}"><strong>${def.label}</strong></td>
                 ${!isWeekend ? `<td class="time-cell">${def.time}</td>` : ''}`;
             
-            // --- MODIFICAÇÃO AQUI: CÉLULA UNIFICADA PARA FOLGA FDS ---
             if (isWeekend && def.key === 'fds_folga') {
-                // Pega a data do Sábado (primeiro item do array dates)
                 const d = dates[0]; 
                 const y = d.getFullYear();
                 const m = d.getMonth() + 1;
                 const _d = d.getDate();
 
-                // Cria UMA célula com colspan="2" (ocupa Sábado e Domingo)
-                // Usamos os dados do Sábado como referência para salvar
-                html += `<td colspan="${dates.length}" style="text-align: center; vertical-align: middle; background-color: #fff5f5;">
-                    <textarea class="escala-input" rows="1" 
-                        style="text-align: center; font-weight: bold; color: #c0392b;"
+                // Célula unificada para folga de fim de semana com estilo de destaque
+                html += `
+                <td colspan="${dates.length}" class="cell-fds-folga">
+                    <textarea class="escala-input bold-red" rows="1" 
                         data-day="${_d}" data-month="${m}" data-year="${y}" data-row="${def.key}"
                         onblur="window.saveManualEdit(this)"
                         oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
                 </td>`;
-            } 
-            // --- CÉLULAS NORMAIS (DIAS ÚTEIS OU OUTROS HORÁRIOS DO FDS) ---
-            else {
+            } else {
                 dates.forEach(d => {
                     const y = d.getFullYear();
                     const m = d.getMonth() + 1;
@@ -378,7 +570,6 @@ function generateTableHTML(dates, rows, isWeekend = false) {
                     </td>`;
                 });
             }
-
             html += `</tr>`;
         }
     });
@@ -397,11 +588,7 @@ window.autoFillCycle = async function() {
     
     const { value: mode } = await Swal.fire({
         title: '✨ Gerar Escala Automática',
-        html: `Início: <b>01/${currentMonth}/${currentYear}</b><br><br>
-               <b>Regras de Feriado Aplicadas:</b><br>
-               🚫 Elaine e João: Folga Total<br>
-               ⚡ Atendentes: Apenas Turno 6h (Roda)<br>
-               👑 Supervisão: Apenas 1 por Feriado (Roda)`,
+        html: `Início: <b>01/${currentMonth}/${currentYear}</b><br><br>`,
         input: 'select',
         inputOptions: { 'month': 'Preencher Apenas este Mês', 'year': 'Preencher até o Final do Ano' },
         inputPlaceholder: 'Selecione o período...',
@@ -436,12 +623,35 @@ window.autoFillCycle = async function() {
         const rotationSnap = await getDoc(rotationRef);
         let rotationState = rotationSnap.exists() ? rotationSnap.data() : { manha: 0, tarde: 0, supervisor: 0 };
 
+        // Carrega registros existentes para evitar sobreposição (CORREÇÃO DE DUPLICIDADE)
+        const existingQ = query(
+            collection(db, "escala_individual"), // Certifique-se que esta constante está definida no topo do arquivo, senão use "escala_individual" string
+            where("data", ">=", startOfViewedMonth.toISOString().split('T')[0])
+        );
+        const existingSnap = await getDocs(existingQ);
+        const absenceMap = {}; // <--- AQUI ESTÁ A VARIÁVEL QUE FALTAVA
+        
+        existingSnap.forEach(doc => {
+            const d = doc.data();
+            // Mapeia quem tem férias ou folga
+            if (d.cargoKey === 'ferias' || d.cargoKey === 'folga' || d.cargoKey === 'fds_folga') {
+                if (!absenceMap[d.data]) absenceMap[d.data] = [];
+                absenceMap[d.data].push(d.nome); 
+            }
+        });
+        
         // 3. Inicializa Batch
         let batch = writeBatch(db); 
         let operationCount = 0;
         
         // --- FUNÇÕES AUXILIARES ---
         function addToBatch(date, name, key, isFeriado, needsCompensacao = false) {
+            // CORREÇÃO: Se já tem folga/férias nesse dia, NÃO adiciona na escala
+            if (absenceMap[date] && absenceMap[date].includes(name)) {
+                console.log(`Pulando ${name} em ${date} pois tem Folga/Férias`);
+                return; 
+            }
+
             const docId = `${date}_${normalizeText(name).replace(/\s/g, '')}`;
             const dataToSave = {
                 data: date, 
@@ -671,11 +881,31 @@ function getRowKeyForSchedule(s) {
 // Funções globais necessárias
 window.changeEscalaMonth = function(delta) {
     currentMonth += delta;
-    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-    else if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    
+    // Ajuste de virada de ano
+    if (currentMonth > 12) { 
+        currentMonth = 1; 
+        currentYear++; 
+    } else if (currentMonth < 1) { 
+        currentMonth = 12; 
+        currentYear--; 
+    }
+
+    // 1. Atualiza o texto do mês no topo
     renderMonthLabel();
-    loadEscala();
-}
+
+    // 2. Verifica se o Editor está aberto ou se estamos na Visualização
+    const editorWrapper = document.getElementById('escala-editor-wrapper');
+    const isEditorOpen = editorWrapper && !editorWrapper.classList.contains('hidden');
+
+    if (isEditorOpen) {
+        // Se estiver editando, carrega a grade de inputs
+        loadEscala(); 
+    } else {
+        // Se estiver apenas lendo, carrega os cards de visualização
+        if (window.loadReadOnlyView) window.loadReadOnlyView();
+    }
+};
 
 async function loadEmployeeList() {
     // 1. Seleciona o container (ajuste o seletor se necessário)
@@ -853,13 +1083,13 @@ window.openEscalaEditor = async function () {
     const editorWrapper = document.getElementById("escala-editor-wrapper");
     const editBtn = document.getElementById("btn-open-editor");
 
-    // Esconde a visualização de leitura e mostra o editor
-    if (viewContainer) viewContainer.style.display = "none";
-    if (editBtn) editBtn.style.display = "none";
+    // Esconde a visualização e mostra o editor usando classes
+    if (viewContainer) viewContainer.classList.add('hidden');
+    if (editBtn) editBtn.classList.add('hidden');
+    
     if (editorWrapper) {
-        editorWrapper.style.display = "block";
-        // Garante que os dados estejam carregados e renderizados no editor
-        // Chamamos a função de renderização apontando para o ID do container do editor
+        editorWrapper.classList.remove('hidden'); // Remove a classe que esconde
+        // Garante que a tabela seja desenhada no contêiner correto
         await loadEscala(); 
     }
 };
@@ -869,14 +1099,30 @@ window.closeEscalaEditor = function () {
     const editorWrapper = document.getElementById("escala-editor-wrapper");
     const editBtn = document.getElementById("btn-open-editor");
 
-    // Volta para o modo visualização
-    if (editorWrapper) editorWrapper.style.display = "none";
-    if (viewContainer) viewContainer.style.display = "block";
-    if (editBtn) editBtn.style.display = "inline-block";
+    // Inverte o processo
+    if (editorWrapper) editorWrapper.classList.add('hidden');
+    if (viewContainer) viewContainer.classList.remove('hidden');
+    if (editBtn) editBtn.classList.remove('hidden');
     
-    // Recarrega a escala para atualizar a visualização de leitura (se houver lógica para ela)
-    // No modelo novo, talvez você queira renderizar a leitura aqui também.
-    // Por enquanto, apenas fechar resolve.
+    // Recarrega a visualização de leitura
+    if (window.loadReadOnlyView) window.loadReadOnlyView();
+};
+
+// Função para recolher/expandir a lateral da equipe no editor
+window.toggleEscalaSidebar = function() {
+    const sidebar = document.getElementById('escala-sidebar-staff');
+    const icon = document.getElementById('sidebar-toggle-icon');
+    
+    if (sidebar) {
+        sidebar.classList.toggle('collapsed');
+        
+        // Altera o ícone conforme o estado
+        if (sidebar.classList.contains('collapsed')) {
+            icon.className = 'fas fa-users'; // Ícone para "mostrar equipe"
+        } else {
+            icon.className = 'fas fa-users-slash'; // Ícone para "esconder equipe"
+        }
+    }
 };
 
 // =========================================================
@@ -1093,18 +1339,20 @@ async function applyVacationRange(nomeCompleto, startStr, endStr) {
 // 9. MODO DE VISUALIZAÇÃO (LEITURA APENAS)
 // =========================================================
 
-async function loadReadOnlyView() {
-    const container = document.getElementById('escala-view-content') || document.getElementById('conteudo-escala');
-    if(!container) return;
+window.loadReadOnlyView = async function() {
+    const container = document.getElementById('escala-view-content');
+    if (!container) {
+        console.error("Erro: Container 'escala-view-content' não encontrado no HTML.");
+        return;
+    }
 
-    // Loader simples
-    container.innerHTML = '<div class="loader" style="text-align:center; padding:20px;">Carregando escala...</div>';
+    container.innerHTML = '<div style="text-align:center; padding:50px;"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br>Carregando visualização...</div>';
 
     try {
         const year = currentYear;
         const monthIndex = currentMonth - 1;
 
-        // --- 1. DEFINE DATAS ---
+        // Cálculo das datas limites (Mesma lógica do editor)
         const firstDay = new Date(year, monthIndex, 1);
         const startOffset = firstDay.getDay() === 0 ? -6 : 1 - firstDay.getDay();
         const startDate = new Date(year, monthIndex, 1 + startOffset);
@@ -1116,19 +1364,7 @@ async function loadReadOnlyView() {
         const startStr = startDate.toISOString().split('T')[0];
         const endStr = endDate.toISOString().split('T')[0];
 
-        // --- 2. DESCOBRE USUÁRIO (Para o Negrito) ---
-        let myShortName = null;
-        if (auth.currentUser) {
-            const qUser = query(collection(db, "users"), where("Email", "==", auth.currentUser.email));
-            const snapUser = await getDocs(qUser);
-            if (!snapUser.empty) {
-                const fullName = snapUser.docs[0].data().Nome;
-                const entry = Object.entries(NAME_MAPPING).find(([key, value]) => value === fullName);
-                myShortName = entry ? entry[0] : fullName.split(' ')[0];
-            }
-        }
-
-        // --- 3. BUSCA DADOS ---
+        // Busca no Firestore
         const q = query(
             collection(db, "escala_individual"), 
             where("data", ">=", startStr),
@@ -1138,121 +1374,75 @@ async function loadReadOnlyView() {
         const events = [];
         snapshot.forEach(doc => events.push(doc.data()));
 
-        // --- 4. RENDERIZAÇÃO (AGORA COM BOTÕES) ---
-        
-        // Limpa o container
+        // Limpa o loader
         container.innerHTML = "";
 
-        // A. Desenha o Cabeçalho de Navegação
-        const monthName = new Date(year, monthIndex, 1).toLocaleDateString('pt-BR', { month: 'long' });
-        const monthCapitalized = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+        // Título do Mês na Visualização
+        const monthTitle = firstDay.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        console.log(`Renderizando visualização para: ${monthTitle}`);
 
-        const navDiv = document.createElement("div");
-        navDiv.style.display = "flex";
-        navDiv.style.alignItems = "center";
-        navDiv.style.justifyContent = "center"; // Centralizado
-        navDiv.style.gap = "20px";
-        navDiv.style.marginBottom = "30px";
-        navDiv.style.padding = "15px";
-        navDiv.style.backgroundColor = "#fff";
-        navDiv.style.borderRadius = "8px";
-        navDiv.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
-
-        navDiv.innerHTML = `
-            <button onclick="window.changeViewMonth(-1)" style="
-                background: #f1f2f6; border: none; padding: 8px 15px; 
-                border-radius: 5px; cursor: pointer; font-size: 18px; color: #555;
-                transition: background 0.2s;">
-                ◀
-            </button>
-            
-            <h2 style="margin: 0; color: #2c3e50; font-size: 24px;">
-                ${monthCapitalized} de ${year}
-            </h2>
-
-            <button onclick="window.changeViewMonth(1)" style="
-                background: #f1f2f6; border: none; padding: 8px 15px; 
-                border-radius: 5px; cursor: pointer; font-size: 18px; color: #555;
-                transition: background 0.2s;">
-                ▶
-            </button>
-        `;
-        container.appendChild(navDiv);
-
-        // B. Cria uma div para as tabelas e chama a função de renderizar
-        const tablesContainer = document.createElement("div");
-        renderReadOnlyTable(tablesContainer, startDate, endDate, events, myShortName);
-        container.appendChild(tablesContainer);
+        // Chama a montagem das semanas
+        renderReadOnlyTable(container, startDate, endDate, events);
 
     } catch (err) {
-        console.error("Erro view:", err);
-        container.innerHTML = '<div style="color:red; text-align:center;">Erro ao carregar escala.</div>';
+        console.error("Erro ao carregar visualização:", err);
+        container.innerHTML = '<div class="alert-error">Erro ao renderizar tabela de leitura.</div>';
     }
-}
+};
 
-function renderReadOnlyTable(container, startDate, endDate, events, myShortName) {
-    container.innerHTML = ""; 
+// 2. Monta as tabelas semanais (Mantendo o agrupamento de nomes + referências)
+function renderReadOnlyTable(container, startDate, endDate, events) {
     let loopDate = new Date(startDate);
     
-    // Agrupamento
+    // Organiza os dados em um mapa para acesso rápido
     const dataMap = {};
-    events.forEach(e => {
-        const key = `${e.data}_${e.cargoKey}`;
-        if(!dataMap[key]) dataMap[key] = [];
-        if(!dataMap[key].includes(e.nome)) dataMap[key].push(e.nome);
-    });
+    if (Array.isArray(events)) {
+        events.forEach(e => {
+            const key = `${e.data}_${e.cargoKey}`;
+            if (!dataMap[key]) dataMap[key] = [];
+            
+            // CORREÇÃO: Mapeia explicitamente 'referencia' para 'ref'
+            if (!dataMap[key].some(item => item.nome === e.nome)) {
+                dataMap[key].push({ 
+                    nome: e.nome, 
+                    ref: e.referencia || null 
+                });
+            }
+        });
+    }
 
-    // Loop Semanal
+    // Loop de Semanas
     while (loopDate <= endDate) {
         const weekDates = [];
-        for(let i=0; i<7; i++) {
+        for (let i = 0; i < 7; i++) {
             weekDates.push(new Date(loopDate));
             loopDate.setDate(loopDate.getDate() + 1);
         }
-        const monday = weekDates[0];
-        const sunday = weekDates[6];
 
+        const f = (d) => `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        
         const wrapper = document.createElement("div");
-        wrapper.className = "week-wrapper-readonly";
-        wrapper.style.marginBottom = "30px";
-        wrapper.style.backgroundColor = "#fff";
-        wrapper.style.borderRadius = "8px";
-        wrapper.style.boxShadow = "0 2px 5px rgba(0,0,0,0.05)";
-        wrapper.style.padding = "15px";
-
-        // Título formatado
-        const f = (d) => `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}`;
+        wrapper.className = "week-wrapper-readonly"; // Classe do seu novo CSS
+        
+        // Estrutura de Card Moderna
         wrapper.innerHTML = `
-            <div style="padding: 10px 15px; background: #f1f2f6; border-left: 5px solid #2980b9; color: #2c3e50; font-weight: bold; font-size: 16px; margin-bottom: 15px; border-radius: 4px;">
-                📅 Semana de ${f(monday)} a ${f(sunday)}
+            <div class="week-header-title">
+                <i class="fas fa-calendar-alt"></i> Semana de ${f(weekDates[0])} a ${f(weekDates[6])}
+            </div>
+            <div class="tables-row">
+                <div class="week-main">
+                    ${generateStaticHTML(weekDates.slice(0, 5), WEEKDAY_ROWS, false, dataMap)}
+                </div>
+                <div class="week-weekend">
+                    ${generateStaticHTML(weekDates.slice(5, 7), WEEKEND_ROWS, true, dataMap)}
+                </div>
             </div>
         `;
 
-        const tablesRow = document.createElement("div");
-        tablesRow.style.display = "flex";
-        tablesRow.style.flexDirection = "row";
-        tablesRow.style.alignItems = "flex-start";
-        tablesRow.style.gap = "20px";
-        tablesRow.style.overflowX = "auto";
-
-        // --- AQUI A MÁGICA: Passamos 'myShortName' para o gerador ---
-        const htmlWeek = generateStaticHTML(weekDates.slice(0, 5), WEEKDAY_ROWS, false, dataMap, myShortName);
-        const htmlFds = generateStaticHTML(weekDates.slice(5, 7), WEEKEND_ROWS, true, dataMap, myShortName);
-
-        const divWeek = document.createElement("div");
-        divWeek.style.flex = "3";
-        divWeek.style.minWidth = "600px";
-        divWeek.innerHTML = htmlWeek;
-
-        const divFds = document.createElement("div");
-        divFds.style.flex = "1";
-        divFds.style.minWidth = "250px"; 
-        divFds.innerHTML = htmlFds;
-
-        tablesRow.appendChild(divWeek);
-        tablesRow.appendChild(divFds);
-        wrapper.appendChild(tablesRow);
         container.appendChild(wrapper);
+        
+        // Evita loop infinito se ultrapassar o mês e for segunda
+        if (loopDate > endDate && loopDate.getDay() === 1) break;
     }
 }
 
@@ -1262,114 +1452,80 @@ function renderReadOnlyTable(container, startDate, endDate, events, myShortName)
 
 // Função principal que abre a janela
 window.openHolidayConfigurator = async function() {
-    
-    // 1. LOADING: Mostra carregando enquanto busca no banco
-    const tempPopup = Swal.fire({ title: 'Carregando feriados...', didOpen: () => Swal.showLoading() });
+    // Lista feriados existentes para visualização rápida (Opcional, mas útil)
+    let holidaysListHTML = '<div style="max-height:100px; overflow-y:auto; margin-bottom:15px; border:1px solid #eee; padding:5px;">';
+    if (window.feriadosCache) {
+        Object.entries(window.feriadosCache).sort().forEach(([date, data]) => {
+            const [y, m, d] = date.split('-');
+            holidaysListHTML += `<div style="font-size:12px; border-bottom:1px solid #f0f0f0; padding:3px;">
+                <b>${d}/${m}</b>: ${data.nome} <span style="color:#999">(${data.tipo})</span>
+                <span style="color:red; cursor:pointer; float:right;" onclick="deleteHoliday('${date}')">✖</span>
+            </div>`;
+        });
+    }
+    holidaysListHTML += '</div>';
+
+    const { value: formValues } = await Swal.fire({
+        title: '📅 Configurar Feriados',
+        html: `
+            <div class="swal-modern-form holiday-theme">
+                ${holidaysListHTML}
+                
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Nome do Feriado</label>
+                    <input id="hol-name" class="swal-custom-input" placeholder="Ex: Tiradentes">
+                </div>
+
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Data</label>
+                    <input type="date" id="hol-date" class="swal-custom-input">
+                </div>
+
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Tipo de Impacto</label>
+                    <select id="hol-type" class="swal-custom-input">
+                        <option value="TOTAL">Total (Ninguém trabalha)</option>
+                        <option value="PARCIAL">Parcial (Escala de Feriado)</option>
+                    </select>
+                </div>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Adicionar Feriado',
+        cancelButtonText: 'Fechar',
+        confirmButtonColor: '#8e44ad',
+        preConfirm: () => ({
+            nome: document.getElementById('hol-name').value,
+            data: document.getElementById('hol-date').value,
+            tipo: document.getElementById('hol-type').value
+        })
+    });
+
+    if (!formValues) return;
+    if (!formValues.nome || !formValues.data) return Swal.fire("Erro", "Preencha nome e data.", "error");
 
     try {
-        // 2. BUSCA FERIADOS EXISTENTES
-        // Ordena por ID (que é a data) para ficar organizado
-        const q = query(collection(db, "feriados_config")); 
-        const snapshot = await getDocs(q);
-        
-        // 3. MONTA A LISTA HTML
-        let htmlList = '<div style="max-height:250px; overflow-y:auto; text-align:left; border:1px solid #eee; padding:5px; margin-bottom:15px; border-radius:4px;">';
-        
-        if (snapshot.empty) {
-            htmlList += '<p style="text-align:center; color:#999; margin:10px;">Nenhum feriado cadastrado.</p>';
-        } else {
-            // Converte para array para poder ordenar por data antes de exibir
-            let feriados = [];
-            snapshot.forEach(doc => feriados.push({ id: doc.id, ...doc.data() }));
-            
-            // Ordena visualmente
-            feriados.sort((a, b) => a.id.localeCompare(b.id));
-
-            feriados.forEach(item => {
-                // Formata data: 2025-12-25 -> 25/12/2025
-                const dataFormatada = item.id.split('-').reverse().join('/');
-                
-                // Define ícone e cor
-                const isTotal = item.tipo === 'TOTAL';
-                const icon = isTotal ? '🔴' : '🟡';
-                const label = isTotal ? 'Folga Geral' : 'Revezamento';
-
-                htmlList += `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #f1f1f1;">
-                        <div>
-                            <strong>${dataFormatada}</strong> - ${item.nome} <br>
-                            <small style="color:${isTotal ? '#c0392b' : '#f39c12'}">${icon} ${label}</small>
-                        </div>
-                        <button onclick="window.deleteHoliday('${item.id}')" style="border:none; background:none; cursor:pointer; font-size:16px;" title="Excluir">
-                            🗑️
-                        </button>
-                    </div>
-                `;
-            });
-        }
-        htmlList += '</div>';
-
-        // Fecha o loading
-        tempPopup.close();
-
-        // 4. ABRE O MODAL COM A LISTA + FORMULÁRIO DE CADASTRO
-        const { value: formValues } = await Swal.fire({
-            title: '📅 Gerenciar Feriados',
-            html: `
-                ${htmlList}
-                <h3 style="font-size:16px; margin:10px 0; text-align:left;">Adicionar Novo:</h3>
-                <input type="date" id="fer-date" class="swal2-input" style="margin:5px 0; width:100%;">
-                <input type="text" id="fer-name" class="swal2-input" placeholder="Nome do Feriado (ex: Natal)" style="margin:5px 0; width:100%;">
-                <select id="fer-type" class="swal2-input" style="margin:5px 0; width:100%;">
-                    <option value="REVEZAMENTO">🟡 Revezamento (Roda a Equipe)</option>
-                    <option value="TOTAL">🔴 Folga Total (Ninguém Trabalha)</option>
-                </select>
-            `,
-            focusConfirm: false,
-            showCancelButton: true,
-            confirmButtonText: 'Salvar Feriado',
-            cancelButtonText: 'Fechar',
-            preConfirm: () => {
-                const data = document.getElementById('fer-date').value;
-                const nome = document.getElementById('fer-name').value;
-                const tipo = document.getElementById('fer-type').value;
-
-                if (!data || !nome) {
-                    Swal.showValidationMessage('Preencha a data e o nome!');
-                    return false;
-                }
-                return { data, nome, tipo };
-            }
+        await setDoc(doc(db, "feriados_config", formValues.data), {
+            nome: formValues.nome,
+            tipo: formValues.tipo,
+            updatedAt: serverTimestamp()
         });
+        
+        // Recarrega feriados na memória
+        const q = query(collection(db, "feriados_config"));
+        const snap = await getDocs(q);
+        window.feriadosCache = {};
+        snap.forEach(doc => window.feriadosCache[doc.id] = doc.data());
 
-        // 5. SALVA NO BANCO SE O USUÁRIO CLICOU EM SALVAR
-        if (formValues) {
-            // Usa a DATA como ID do documento (evita duplicatas no mesmo dia)
-            await setDoc(doc(db, "feriados_config", formValues.data), {
-                nome: formValues.nome,
-                tipo: formValues.tipo,
-                data: formValues.data // redundante mas útil
-            });
-
-            // Atualiza cache global (para a tabela pintar de laranja sem F5)
-            if (!window.feriadosCache) window.feriadosCache = {};
-            window.feriadosCache[formValues.data] = formValues;
-
-            Swal.fire({
-                title: "Salvo!",
-                text: "Feriado adicionado com sucesso.",
-                icon: "success",
-                timer: 1500,
-                showConfirmButton: false
-            });
-
-            // Reabre a janela para ver a lista atualizada
-            setTimeout(() => window.openHolidayConfigurator(), 800);
-        }
-
-    } catch (error) {
-        console.error("Erro feriados:", error);
-        Swal.fire("Erro", "Não foi possível carregar os feriados.", "error");
+        Swal.fire("Sucesso", "Feriado adicionado!", "success").then(() => {
+            // Reabre para adicionar outro se quiser, ou atualiza a tela
+            loadEscala();
+            calculateYearlyCompOffs();
+        });
+    } catch (e) {
+        console.error(e);
+        Swal.fire("Erro", "Falha ao salvar.", "error");
     }
 };
 
@@ -1392,115 +1548,90 @@ window.deleteHoliday = async function(id) {
 
 // Gerador de HTML Estático (Sem Inputs)
 function generateStaticHTML(dates, rows, isWeekend, dataMap, myShortName) {
-    // Helper para normalizar texto
-    const normalize = (str) => {
-        return str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
-    };
+    const normalize = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
     const myNorm = normalize(myShortName);
 
-    let html = `<table class="escala-table ${isWeekend ? 'weekend-table' : ''}">
+    // A tabela recebe a classe 'weekend-table' se for sábado/domingo para o CSS aplicar o tema coral
+    let html = `<table class="escala-table-modern ${isWeekend ? 'weekend-table' : ''}">
         <thead><tr>
             <th class="${isWeekend ? 'col-horario-fds' : 'col-cargo'}">${isWeekend ? 'HORÁRIO' : 'CARGO'}</th>
             ${!isWeekend ? '<th class="col-horario">HORÁRIO</th>' : ''}`;
     
-    // --- CABEÇALHO (DIAS) ---
     dates.forEach(d => {
         const dayName = d.toLocaleDateString('pt-BR', { weekday: 'short' }).toUpperCase().slice(0, 3);
         const isToday = d.toDateString() === new Date().toDateString();
         
-        // Verifica se o dia pertence ao mês atual da visualização
+        // Verificação de Mês para aplicar o efeito "apagado" (fade)
         const isCurrentViewMonth = d.getMonth() === (currentMonth - 1);
-
-        // Estilo: Se não for do mês, fica transparente
-        const fadeStyle = isCurrentViewMonth ? '' : 'opacity: 0.25; filter: grayscale(100%);';
-
-        // Estilo: Hoje (Amarelo)
-        const thHighlight = isToday 
-            ? 'background-color: #fff9c4; color: #2c3e50; border-bottom: 3px solid #f1c40f;' 
-            : '';
-
-        // Estilo: Feriado no Cabeçalho (Opcional, mas ajuda)
+        
         const isoHeader = d.toISOString().split('T')[0];
-        const isFeriadoHeader = window.feriadosCache && window.feriadosCache[isoHeader];
-        const feriadoHeaderStyle = isFeriadoHeader ? 'color: #e65100; font-weight:bold;' : '';
+        const feriadoData = window.feriadosCache && window.feriadosCache[isoHeader];
 
-        html += `<th style="${thHighlight} ${fadeStyle} ${feriadoHeaderStyle}">
-            ${dayName}<br>
-            <small>${d.getDate()}/${d.getMonth()+1}</small>
+        let thClass = isToday ? 'today-header' : '';
+        let holidayNameHtml = '';
+
+        if (feriadoData) {
+        thClass += ' header-feriado';
+        // Adiciona o nome do feriado no cabeçalho
+        holidayNameHtml = `<span class="holiday-name-label">${feriadoData.nome}</span>`;
+        }
+
+        if (!isCurrentViewMonth) thClass += ' month-fade';
+
+        // Adiciona o nome do feriado abaixo da data
+        html += `<th class="${thClass}">
+        ${dayName}<br>
+        <small>${d.getDate()}/${d.getMonth()+1}</small>
+        ${holidayNameHtml}
         </th>`;
-    });
+            });
+    
     html += `</tr></thead><tbody>`;
 
-    // --- CORPO DA TABELA ---
     rows.forEach(def => {
         if (def.type === 'header') {
-            html += `<tr class="${def.cssClass}"><td colspan="${dates.length + 2}"><b>${def.label}</b></td></tr>`;
+            // Ajusta o colspan dinamicamente para não quebrar o layout entre semana e FDS
+            html += `<tr class="${def.cssClass}"><td colspan="${dates.length + (isWeekend ? 1 : 2)}"><b>${def.label}</b></td></tr>`;
         } else {
             html += `<tr class="${def.cssClass}">
-                <td class="${isWeekend ? 'time-cell-fds' : 'cargo-cell'}">${def.label}</td>
+                <td class="${isWeekend ? 'time-cell-fds' : 'cargo-cell'}"><strong>${def.label}</strong></td>
                 ${!isWeekend ? `<td class="time-cell">${def.time}</td>` : ''}`;
             
-            // --- CÉLULA FOLGA FDS (UNIFICADA) ---
+            // Lógica para a linha unificada de FOLGA FDS
             if (isWeekend && def.key === 'fds_folga') {
-                const sat = dates[0];
-                const sun = dates[1];
+                const satISO = dates[0].toISOString().split('T')[0];
+                const sunISO = dates[1].toISOString().split('T')[0];
+                const satData = dataMap[`${satISO}_fds_folga`] || [];
+                const sunData = dataMap[`${sunISO}_fds_folga`] || [];
                 
-                const showWeekend = (sat.getMonth() === currentMonth - 1) || (sun.getMonth() === currentMonth - 1);
-                const fadeStyle = showWeekend ? '' : 'opacity: 0.25;';
+                // Filtra quem está de folga o FDS inteiro (presente no Sábado e no Domingo)
+                const fullWeekendOff = satData.filter(s => sunData.some(sun => sun.nome === s.nome));
+                
+                const formattedNames = fullWeekendOff.map(item =>
+                    renderNameWithRef(item, myNorm, normalize, 'my-name-highlight')
+                ).join(' / ');
 
-                const satISO = sat.toISOString().split('T')[0];
-                const sunISO = sun.toISOString().split('T')[0];
-                const satNames = dataMap[`${satISO}_fds_folga`] || [];
-                const sunNames = dataMap[`${sunISO}_fds_folga`] || [];
-                
-                const fullWeekendOff = satNames.filter(name => sunNames.includes(name));
-                
-                const formattedNames = fullWeekendOff.map(name => {
-                    if (myNorm && normalize(name) === myNorm) {
-                        return `<span style="font-weight:900; color:#c0392b; text-decoration:underline; font-size:1.1em;">${name}</span>`;
-                    }
-                    return name;
-                }).join(' / ');
-
-                html += `<td colspan="2" style="text-align:center; vertical-align:middle; background-color:#fff5f5; color:#c0392b; font-weight:bold; height:30px; ${fadeStyle}">
-                    ${formattedNames}
-                </td>`;
-            } 
-            // --- CÉLULAS NORMAIS ---
-            else {
+                html += `<td colspan="2" class="cell-fds-folga-static">${formattedNames || '-'}</td>`;
+            } else {
                 dates.forEach(d => {
                     const iso = d.toISOString().split('T')[0];
                     const key = `${iso}_${def.key}`;
-                    const rawNames = dataMap[key] || [];
-
+                    const rawData = dataMap[key] || [];
                     const isToday = d.toDateString() === new Date().toDateString();
+                    const isFeriado = window.feriadosCache && window.feriadosCache[iso];
+                    
+                    // Verificação de Mês também nas células TD para garantir o efeito visual completo
                     const isCurrentViewMonth = d.getMonth() === (currentMonth - 1);
 
-                    // 1. ESTILO BÁSICO (Transparência mês / Hoje)
-                    const fadeStyle = isCurrentViewMonth ? '' : 'opacity: 0.25;';
-                    let cellStyle = isToday ? 'background-color: #fff9c4; color: #000;' : '';
+                    let tdClass = isToday ? 'today-cell' : '';
+                    if (isFeriado) tdClass += ' cell-feriado';
+                    if (!isCurrentViewMonth) tdClass += ' month-fade'; // Aplica fade na célula
 
-                    // 2. VERIFICAÇÃO DE FERIADO (NOVO)
-                    // (Esta lógica tem que vir ANTES de usar a variável html)
-                    let feriadoClass = '';
-                    if (window.feriadosCache && window.feriadosCache[iso]) {
-                        feriadoClass = 'cell-feriado'; // Adiciona a classe CSS laranja
-                        // Se quiser forçar style inline:
-                        // cellStyle = 'background-color: #ffe0b2; color: #e65100; font-weight: bold;';
-                    }
-
-                    // 3. PREPARA OS NOMES (AQUI CRIA O displayNames)
-                    const displayNames = rawNames.map(name => {
-                        if (myNorm && normalize(name) === myNorm) {
-                            return `<span style="font-weight:900; color:#000; background-color:rgba(255,255,255,0.7); padding:2px 6px; border-radius:4px; border:1px solid #666; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">${name}</span>`;
-                        }
-                        return name;
-                    }).join(' / ');
+                    const displayNames = rawData.map(item =>
+                        renderNameWithRef(item, myNorm, normalize, 'my-name-highlight')
+                    ).join(' / ');
                     
-                    // 4. MONTA O HTML FINAL DA CÉLULA
-                    html += `<td class="${feriadoClass}" style="text-align:center; height:30px; vertical-align:middle; ${cellStyle} ${fadeStyle}">
-                        ${displayNames}
-                    </td>`;
+                    html += `<td class="${tdClass}">${displayNames || ''}</td>`;
                 });
             }
             html += `</tr>`;
@@ -1508,6 +1639,329 @@ function generateStaticHTML(dates, rows, isWeekend, dataMap, myShortName) {
     });
     html += `</tbody></table>`;
     return html;
+}
+
+window.openAbsenceConfigurator = async function(type = 'FOLGA') {
+    // ... (Identificação do período visível - mantido)
+    const monthLabelEl = document.getElementById('escala-month-label');
+    const monthYearText = monthLabelEl?.textContent || ""; 
+    const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const parts = monthYearText.split(/\s+[Dd]e\s+/);
+    const viewMonthIdx = meses.indexOf(parts[0]);
+    const viewYear = parts[1];
+    const viewedPeriod = `${viewYear}-${String(viewMonthIdx + 1).padStart(2, '0')}`;
+
+    let allUsers = [];
+    try {
+        const q = query(collection(db, "users"));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => { if (doc.data().Nome) allUsers.push(doc.data().Nome); });
+        allUsers.sort();
+    } catch (e) { console.error(e); return; }
+
+    // Objeto para guardar as DATAS específicas de cada um
+    let userDetailsMap = {}; 
+
+    if (type === 'FOLGA') {
+        const holidayDates = Object.keys(window.feriadosCache || {}).filter(d => d.startsWith(viewedPeriod));
+        
+        // Busca o que foi trabalhado no mês
+        const qWork = query(collection(db, "escala_individual"), where("data", "in", holidayDates));
+        const snap = await getDocs(qWork);
+        
+        snap.forEach(doc => {
+            const d = doc.data();
+            let isValidWork = !['folga', 'ferias', 'fds_folga'].includes(d.cargoKey);
+            const dateObj = new Date(d.data + 'T12:00:00');
+            if ((dateObj.getDay() === 0 || dateObj.getDay() === 6)) {
+                const profile = EMPLOYEE_PROFILES[d.nome] || EMPLOYEE_PROFILES[Object.entries(NAME_MAPPING).find(([k,v]) => k === d.nome)?.[1]];
+                if (profile && profile.startsWith('FIXO_')) isValidWork = false;
+            }
+            if (isValidWork) {
+                if (!userDetailsMap[d.nome]) userDetailsMap[d.nome] = { worked: [], taken: 0 };
+                userDetailsMap[d.nome].worked.push({ date: d.data, reason: window.feriadosCache[d.data].nome });
+            }
+        });
+
+        // Subtrai folgas já tiradas
+        const qFolgas = query(collection(db, "escala_individual"), 
+            where("data", ">=", `${viewedPeriod}-01`), where("data", "<=", `${viewedPeriod}-31`), 
+            where("cargoKey", "==", "folga")
+        );
+        const snapFolgas = await getDocs(qFolgas);
+        snapFolgas.forEach(doc => {
+            const nome = doc.data().nome;
+            if (userDetailsMap[nome]) userDetailsMap[nome].taken++;
+        });
+    }
+
+    const usersWithBalance = allUsers.filter(u => {
+        const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === u)?.[0] || u.split(' ')[0];
+        return type === 'FERIAS' || (userDetailsMap[short] && (userDetailsMap[short].worked.length - userDetailsMap[short].taken) > 0);
+    });
+
+    if (type === 'FOLGA' && usersWithBalance.length === 0) return Swal.fire("Tudo certo!", `Sem folgas pendentes em ${parts[0]}.`, "success");
+
+    const usersOptions = usersWithBalance.map(u => `<option value="${u}">${u}</option>`).join('');
+
+    const { value: formValues } = await Swal.fire({
+        title: type === 'FOLGA' ? '🏖️ Registrar Folga' : '✈️ Registrar Férias',
+        html: `
+            <div class="swal-modern-form">
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Colaborador</label>
+                    <select id="abs-name" class="swal-custom-input">${usersOptions}</select>
+                </div>
+                <div id="absence-info-box" style="margin-bottom:15px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:12px; border-left:4px solid #3498db; display:none;">
+                    </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Data</label>
+                    <input type="text" id="abs-start" class="swal-custom-input" placeholder="Selecione a data">
+                </div>
+            </div>
+        `,
+        didOpen: () => {
+            const nameSelect = document.getElementById('abs-name');
+            const infoBox = document.getElementById('absence-info-box');
+
+            const updateInfo = () => {
+                const fullName = nameSelect.value;
+                const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === fullName)?.[0] || fullName.split(' ')[0];
+                const data = userDetailsMap[short];
+                
+                if (type === 'FOLGA' && data) {
+                    const balance = data.worked.length - data.taken;
+                    const pendingDates = data.worked.map(w => `• ${w.date.split('-')[2]}/${w.date.split('-')[1]} (${w.reason})`).join('<br>');
+                    infoBox.innerHTML = `<strong>Pendências (${balance}):</strong><br>${pendingDates}`;
+                    infoBox.style.display = 'block';
+                } else {
+                    infoBox.style.display = 'none';
+                }
+            };
+
+            nameSelect.onchange = updateInfo;
+            updateInfo();
+
+            flatpickr("#abs-start", { dateFormat: "Y-m-d", altInput: true, altFormat: "d/m/Y", locale: "pt" });
+        },
+        preConfirm: () => {
+            const fullName = document.getElementById('abs-name').value;
+            const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === fullName)?.[0] || fullName.split(' ')[0];
+            const data = userDetailsMap[short];
+            
+            // Pega o feriado mais antigo disponível para vincular
+            let ref = null;
+            if (type === 'FOLGA' && data) {
+                ref = data.worked[data.taken]?.reason || "Feriado Trabalhado";
+            }
+
+            return {
+                nome: fullName,
+                shortName: short,
+                start: document.getElementById('abs-start').value,
+                referencia: ref
+            };
+        }
+    });
+
+    if (!formValues || !formValues.start) return;
+
+    // DEFINIÇÃO DA VARIÁVEL FALTANTE PARA O ID E O TIPO
+    const typeKey = type === 'FOLGA' ? 'folga' : 'ferias';
+
+    let batch = writeBatch(db);
+    const docId = `${formValues.start}_${normalizeText(formValues.shortName).replace(/\s/g, '')}_${typeKey}`;
+    
+    const dataToSave = {
+        data: formValues.start,
+        nome: formValues.shortName,
+        cargoKey: typeKey,
+        updatedAt: serverTimestamp()
+    };
+
+    // Só adiciona o vínculo se for FOLGA e houver uma referência calculada
+    if (type === 'FOLGA' && formValues.referencia) {
+        dataToSave.referencia = formValues.referencia;
+    }
+
+    batch.set(doc(db, "escala_individual", docId), dataToSave);
+
+    await batch.commit();
+    Swal.fire("Sucesso!", "Folga registrada e vinculada.", "success");
+    loadEscala();
+};
+
+// 1. Abre o modal que lista as férias para exclusão
+window.openVacationManager = async function() {
+    if(window.showToast) window.showToast("Carregando histórico de férias...", "info");
+
+    try {
+        const q = query(collection(db, "ferias_registros"), orderBy("start", "desc"));
+        const snapshot = await getDocs(q);
+        
+        let listHtml = `
+            <div style="max-height: 300px; overflow-y: auto; text-align: left; border: 1px solid #eee; border-radius: 8px; padding: 10px;">
+        `;
+
+        if (snapshot.empty) {
+            listHtml += `<p style="color:#666; text-align:center;">Nenhum registro de férias encontrado.</p>`;
+        } else {
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                const id = docSnap.id;
+                // Formatação simples para exibição
+                const start = data.start.split('-').reverse().join('/');
+                const end = data.end.split('-').reverse().join('/');
+                
+                listHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f5f5f5;">
+                        <div>
+                            <strong style="display:block; font-size: 14px;">${data.nome}</strong>
+                            <span style="font-size: 12px; color: #666;">${start} até ${end}</span>
+                        </div>
+                        <button onclick="deleteVacationRecord('${id}', '${data.nome}', '${data.start}', '${data.end}')" 
+                                style="background: #ff7675; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                            Excluir
+                        </button>
+                    </div>
+                `;
+            });
+        }
+        listHtml += `</div>`;
+
+        Swal.fire({
+            title: '✈️ Gerenciar Férias',
+            html: listHtml,
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Fechar'
+        });
+
+    } catch (e) {
+        console.error("Erro ao listar férias:", e);
+        Swal.fire("Erro", "Falha ao carregar registros.", "error");
+    }
+};
+
+// 2. Função técnica para deletar o registro e limpar a escala
+window.deleteVacationRecord = async function(docId, nomeCompleto, startStr, endStr) {
+    const result = await Swal.fire({
+        title: 'Tem certeza?',
+        text: `Deseja remover as férias de ${nomeCompleto}? Os dias na escala ficarão vazios.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir'
+    });
+
+    if (!result.isConfirmed) return;
+
+    if(window.showToast) window.showToast("Removendo...", "info");
+
+    try {
+        let batch = writeBatch(db);
+
+        // A. Remove o registro mestre
+        batch.delete(doc(db, "ferias_registros", docId));
+
+        // B. Identifica o nome curto usado na escala
+        let shortName = nomeCompleto.split(' ')[0];
+        const entry = Object.entries(NAME_MAPPING).find(([k, v]) => v === nomeCompleto);
+        if (entry) shortName = entry[0];
+
+        // C. Limpa os dias na escala individual
+        const [startY, startM, startD] = startStr.split('-').map(Number);
+        const [endY, endM, endD] = endStr.split('-').map(Number);
+        const startDate = new Date(Date.UTC(startY, startM - 1, startD, 12, 0, 0));
+        const endDate = new Date(Date.UTC(endY, endM - 1, endD, 12, 0, 0));
+
+        let cursor = new Date(startDate);
+        while (cursor <= endDate) {
+            const dateISO = cursor.toISOString().split('T')[0];
+            const docIdEscala = `${dateISO}_${normalizeText(shortName).replace(/\s/g, '')}_ferias`;
+            batch.delete(doc(db, "escala_individual", docIdEscala));
+            
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+
+        await batch.commit();
+        
+        Swal.fire('Excluído!', 'O registro de férias foi removido.', 'success');
+        
+        // Atualiza a visualização
+        loadEscala();
+        // Reabre o gerenciador para ver a lista atualizada
+        window.openVacationManager();
+
+    } catch (e) {
+        console.error("Erro ao deletar férias:", e);
+        Swal.fire("Erro", "Não foi possível excluir o registro.", "error");
+    }
+};
+
+window.menuFerias = function() {
+    Swal.fire({
+        title: 'Opções de Férias',
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: 'Registrar Novas',
+        denyButtonText: 'Gerenciar Existentes',
+        confirmButtonColor: '#2980b9',
+        denyButtonColor: '#8e44ad'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.openVacationConfigurator();
+        } else if (result.isDenied) {
+            window.openVacationManager();
+        }
+    });
+};
+
+function checkHolidayCompOffs() {
+    const auditData = {}; 
+    const currentMonthNum = currentMonth; 
+
+    cachedEvents.forEach(event => {
+        const dateISO = event.data;
+        if (!dateISO) return;
+
+        const eventMonth = parseInt(dateISO.split('-')[1]);
+        if (eventMonth !== currentMonthNum) return; 
+
+        const name = event.nome;
+
+        if (!auditData[name]) {
+            auditData[name] = { worked: [], taken: 0 };
+        }
+
+        if (window.feriadosCache && window.feriadosCache[dateISO]) {
+            // --- NOVA REGRA: IGNORAR SUPERVISORAS EM FINAL DE SEMANA ---
+            const dateObj = new Date(dateISO + 'T12:00:00'); 
+            const dayOfWeek = dateObj.getDay(); 
+            const fullName = Object.entries(NAME_MAPPING).find(([k,v]) => k === name)?.[1] || name;
+            const profile = EMPLOYEE_PROFILES[name] || EMPLOYEE_PROFILES[fullName];
+
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            const isFixedRole = profile && profile.startsWith('FIXO_');
+
+            // Só conta se NÃO for (Fim de Semana + Cargo Fixo)
+            if (!(isWeekend && isFixedRole)) {
+                if (event.cargoKey !== 'folga' && event.cargoKey !== 'ferias' && event.cargoKey !== 'fds_folga') {
+                    auditData[name].worked.push({
+                        date: dateISO,
+                        reason: window.feriadosCache[dateISO].nome || 'Feriado'
+                    });
+                }
+            }
+            // -----------------------------------------------------------
+        }
+
+        if (event.cargoKey === 'folga') {
+            auditData[name].taken++;
+        }
+    });
+
+    updateSidebarBadges(auditData);
 }
 
 // Função para navegar no modo Leitura
@@ -1538,3 +1992,6 @@ window.openCycleConfigurator = openCycleConfigurator;
 window.openVacationConfigurator = openVacationConfigurator;
 window.loadReadOnlyView = loadReadOnlyView;
 window.changeViewMonth = changeViewMonth;
+window.openVacationConfigurator = () => window.openAbsenceConfigurator('FERIAS');
+window.openFolgaConfigurator = () => window.openAbsenceConfigurator('FOLGA');
+window.menuFerias = menuFerias;

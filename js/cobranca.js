@@ -2,13 +2,16 @@
 import { db, auth } from './firebase.js'; 
 import {
   collection, getDocs, query, orderBy, addDoc,
-  updateDoc, doc, arrayUnion, deleteDoc, where, deleteField 
+  updateDoc, doc, arrayUnion, deleteDoc, where, deleteField, writeBatch, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import { formatDateUTC, parseDateBR, mapStatusToLabel } from './utils.js';
 
 export const COBRANCA_COLLECTION = 'controle_3_cobranca';
 window.COBRANCA_COLLECTION = COBRANCA_COLLECTION; 
+
+window.groupedCobrancaCache = window.groupedCobrancaCache || {};
+let currentGroupedStudent = null;
 
 // Cache local
 window.cobrancaList = [];
@@ -28,7 +31,7 @@ export async function loadCobrancaData() {
   if (container) container.innerHTML = '<div class="loader"></div>';
 
   try {
-    const q = query(collection(db, COBRANCA_COLLECTION), orderBy("createdAt", "desc"));
+    const q = query(collection(db, COBRANCA_COLLECTION), where("Status", "!=", "Pago"), orderBy("Status"), orderBy("createdAt", "desc"));
     const querySnapshot = await getDocs(q);
 
     const rawList = [];
@@ -128,10 +131,19 @@ export function filterCobranca() {
 }
 window.filterCobranca = filterCobranca;
 
+window.openActionsModalByKey = function(key) {
+    const aluno = window.groupedCobrancaCache[key];
+    if (aluno) {
+        // Certifique-se que sua openActionsModal aceite o objeto
+        openActionsModal(aluno); 
+    } else {
+        console.error("Erro: Aluno não encontrado no cache.");
+    }
+};
+
 export function renderCobrancaList(data) {
   const container = document.getElementById('cobranca-list');
   if (!container) return;
-
   container.innerHTML = '';
 
   if (!data || data.length === 0) {
@@ -139,98 +151,75 @@ export function renderCobrancaList(data) {
     return;
   }
 
-  const sortedData = data.sort((a, b) => (a.diasAtrasoCalculado || 0) - (b.diasAtrasoCalculado || 0));
+  const groupedMap = {};
+  data.forEach(item => {
+    const key = item.CPF || item.Email || item.Nome;
+    if (!groupedMap[key]) {
+      groupedMap[key] = {
+        ...item,
+        listaCursos: [{ id: item.id, nome: item.Curso, valor: item.Valor, vencimento: item.Vencimento }],
+        todosIds: [item.id]
+      };
+    } else {
+      groupedMap[key].listaCursos.push({ id: item.id, nome: item.Curso, valor: item.Valor, vencimento: item.Vencimento });
+      groupedMap[key].todosIds.push(item.id);
+      
+      // Sincroniza o maior atraso para o badge principal
+      if ((item.diasAtrasoCalculado || 0) > (groupedMap[key].diasAtrasoCalculado || 0)) {
+          groupedMap[key].diasAtrasoCalculado = item.diasAtrasoCalculado;
+          groupedMap[key].Data1Jur = item.Data1Jur;
+          groupedMap[key].DataTag = item.DataTag;
+          groupedMap[key].StatusExtra = item.StatusExtra;
+      }
+    }
+  });
+
+  window.groupedCobrancaCache = groupedMap; 
+  const sortedData = Object.values(groupedMap).sort((a, b) => (a.diasAtrasoCalculado || 0) - (b.diasAtrasoCalculado || 0));
 
   sortedData.forEach(aluno => {
-      // Badge de dias
-      const diasLabel = aluno.diasAtrasoCalculado 
-          ? `<span style="background:#fff3cd; color:#856404; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold; margin-left:5px;">${aluno.diasAtrasoCalculado} dias</span>`
-          : '';
+      const keyParaBotao = (aluno.CPF || aluno.Email || aluno.Nome).replace(/'/g, "\\'");
+      const tagNome = aluno.StatusExtra?.tipo || aluno.StatusExtra || null;
       
+      // Badge de dias (Pílula amarela)
+      const diasLabel = aluno.diasAtrasoCalculado 
+          ? `<span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:bold; margin-left:8px; border: 1px solid #ffeeba;">${aluno.diasAtrasoCalculado} dias</span>`
+          : '';
+
       const dataLimite = aluno.Data1Jur ? (typeof formatDateUTC === 'function' ? formatDateUTC(aluno.Data1Jur) : aluno.Data1Jur) : 'N/A';
 
-      // -----------------------------------------------------------
-      // LÓGICA DO CRONÔMETRO (COM DIAGNÓSTICO)
-      // -----------------------------------------------------------
-      const tagNome = aluno.StatusExtra?.tipo || aluno.StatusExtra || null;
-      const safeClass = String(tagNome || "nenhum").replace(/_/g, '-').replace(/\s+/g, '-').toLowerCase();
+      // Gerador de cursos compacto (Evita amontoamento)
+      const cursosHTML = aluno.listaCursos.map(c => `
+        <div style="border-left: 3px solid #007bff; padding-left: 10px; margin-bottom: 6px; background: #fdfdfd; padding: 5px 10px; border-radius: 4px;">
+           <span style="font-size:13px; display:block; color: #333;"><strong>Curso:</strong> ${c.nome || '-'}</span>
+           <span style="font-size:12px; color:#666;">Valor: ${c.valor || '-'} | Venc: ${c.vencimento || '-'}</span>
+        </div>
+      `).join('');
 
-      let timeLabelHtml = '';
-
-      // LISTA DE EXCEÇÕES VISUAIS
-      const tagsPermanentes = ['Link agendado', 'Jurídica'];
-
-      // Só calcula o tempo se NÃO for uma tag permanente
-      if (tagNome && aluno.DataTag && !tagsPermanentes.includes(tagNome)) {
-          const dataTag = aluno.DataTag.toDate ? aluno.DataTag.toDate() : new Date(aluno.DataTag);
-          const agora = new Date();
-          
-          const diffDias = (agora - dataTag) / (1000 * 60 * 60 * 24);
-          const diasRestantes = 3 - diffDias;
-
-          let textoTempo = '';
-          if (diasRestantes < 0) {
-            textoTempo = '(expirando...)';
-          } else if (diasRestantes < 1) {
-            const horas = Math.ceil(diasRestantes * 24);
-            textoTempo = `(${horas}h rest.)`;
-          } else {
-            textoTempo = `(${Math.ceil(diasRestantes)}d rest.)`;
-          }
-
-          timeLabelHtml = `<span style="font-size:0.85em; opacity:1; margin-left:6px; color:#333; font-weight:bold;">${textoTempo}</span>`;
-      }
-      // -------------------
-
-      if (tagNome && aluno.DataTag) {
-          const dataTag = aluno.DataTag.toDate ? aluno.DataTag.toDate() : new Date(aluno.DataTag);
-          const agora = new Date();
-          
-          const diffDias = (agora - dataTag) / (1000 * 60 * 60 * 24);
-          const diasRestantes = 3 - diffDias;
-
-          let textoTempo = '';
-          if (diasRestantes < 0) {
-             textoTempo = '(expirando...)';
-          } else if (diasRestantes < 1) {
-             const horas = Math.ceil(diasRestantes * 24);
-             textoTempo = `(${horas}h rest.)`;
-          } else {
-             textoTempo = `(${Math.ceil(diasRestantes)}d rest.)`;
-          }
-
-          // Forcei uma cor preta aqui para garantir que não esteja invisível
-          timeLabelHtml = `<span style="font-size:0.85em; opacity:1; margin-left:6px; color:#333; font-weight:bold;">${textoTempo}</span>`;
-      }
-
-      const labelTag = typeof mapStatusToLabel === 'function' ? mapStatusToLabel(tagNome) : tagNome;
-
-      const statusLabelHtml = tagNome
-        ? `<p class="extra-status">${labelTag} ${timeLabelHtml}</p>`
-        : '';
-
-      const ligaCount = aluno.LigaEtapa || 0;
-      const msgCount = aluno.TemplateEtapa || 0;
-  
       const card = document.createElement('div');
+      const safeClass = String(tagNome || "nenhum").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]+/g, '-').toLowerCase();
       card.className = `cobranca-card status-${safeClass}`;
   
       card.innerHTML = `
         <div class="card-info">
-          <h3>${aluno.Nome}</h3>
-          <p style="margin-top:10px;"><strong>Curso:</strong> ${aluno.Curso || '-'}</p>
-          <p><strong>Valor:</strong> ${aluno.Valor || '-'} | <strong>Venc:</strong> ${aluno.Vencimento || '-'} ${diasLabel}</p>
-          <p style="margin-top:5px; font-size:12px; color:#555;">
-              📞 Ligações: <strong>${ligaCount}</strong> | 💬 Templates: <strong>${msgCount}</strong>
-          </p>
-          <p class="limit-date">⚠️ Jurídico em: ${dataLimite}</p>
-          ${statusLabelHtml}
-        </div>
-        <div class="card-actions">
-          <button class="btn-actions-open" onclick="window.openActionsModal('${aluno.id}')">⚡ Ações</button>
-          <div class="small-actions">
-            <button class="icon-btn trash-icon admin-only" onclick="window.archiveStudent('${aluno.id}')">🗑️</button>
+          <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 10px;">
+             <h3 style="margin:0; font-size: 1.1rem;">${aluno.Nome}</h3>
+             ${aluno.listaCursos.length > 1 ? `<span style="background:#e7f1ff; color:#007bff; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold;">${aluno.listaCursos.length} CURSOS</span>` : ''}
           </div>
+          
+          <div class="courses-list-container" style="margin-bottom: 12px;">
+            ${cursosHTML}
+          </div>
+
+          <p style="margin:8px 0; font-size:13px; color:#444; display: flex; align-items: center;">
+              📞 Lig: <strong>${aluno.LigaEtapa || 0}</strong> | 💬 Temp: <strong>${aluno.TemplateEtapa || 0}</strong> ${diasLabel}
+          </p>
+          <p class="limit-date" style="margin: 5px 0; color: #d9534f; font-weight: 500;">⚠️ Jurídico em: ${dataLimite}</p>
+          ${tagNome ? `<p class="extra-status" style="margin-top: 8px;">${typeof mapStatusToLabel === 'function' ? mapStatusToLabel(tagNome) : tagNome}</p>` : ''}
+        </div>
+        <div class="card-actions" style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
+          <button class="btn-actions-open" onclick="window.openActionsModalByKey('${keyParaBotao}')">⚡ Ações</button>
+          <button class="icon-btn trash-icon admin-only" style="opacity: 0.3;" onclick="window.archiveStudent('${aluno.id}')">🗑️</button>
         </div>
       `;
       container.appendChild(card);
@@ -324,61 +313,138 @@ window.processImport = async function () {
   }
 };
 
+async function salvarTagParaTodosOsCursos(alunoAgrupado, novaTag) {
+  const batch = writeBatch(db);
+  const userEmail = getCurrentUserEmail();
+  const ids = alunoAgrupado.todosIds || [alunoAgrupado.id];
+
+  ids.forEach(docId => {
+    const docRef = doc(db, COBRANCA_COLLECTION, docId);
+    
+    if (novaTag) {
+      batch.update(docRef, {
+        StatusExtra: { tipo: novaTag, atualizadoEm: new Date(), por: userEmail },
+        UltimoResponsavel: userEmail,
+        DataTag: new Date(),
+        HistoricoLogs: arrayUnion({
+          tipo: "tag",
+          detalhe: `Tag "${novaTag}" adicionada via card agrupado`,
+          responsavel: userEmail,
+          timestamp: new Date().toISOString()
+        })
+      });
+    } else {
+      batch.update(docRef, {
+        StatusExtra: deleteField(),
+        DataTag: deleteField(),
+        UltimoResponsavel: userEmail,
+        HistoricoLogs: arrayUnion({
+          tipo: "tag",
+          detalhe: `Tag removida via card agrupado`,
+          responsavel: userEmail,
+          timestamp: new Date().toISOString()
+        })
+      });
+    }
+  });
+
+  return await batch.commit();
+}
+
 // -------------------------
 // 4. MODAL DE AÇÕES (DETALHES)
 // -------------------------
-export function openActionsModal(docId) {
-  const aluno = window.cobrancaList.find(a => a.id === docId);
-  if (!aluno) return;
 
-  currentActionStudentId = docId;
+export function openActionsModal(alunoObjeto) {
+  // alunoObjeto é o objeto que vem do cache agrupado
+  if (!alunoObjeto) return;
+
+  // 1. Sincronização Global
+  // Armazenamos na variável que as funções saveProposal/nextCallStage utilizam
+  currentGroupedStudent = alunoObjeto;
+  window.currentActionStudentId = alunoObjeto.id; 
+
+  // 2. Preenchimento de Dados Básicos
+  document.getElementById('actions-student-name').textContent = alunoObjeto.Nome;
   
-  // 1. Preenche Dados básicos
-  document.getElementById('actions-student-name').textContent = aluno.Nome;
+  const totalCursos = alunoObjeto.listaCursos ? alunoObjeto.listaCursos.length : 0;
+  
+  const cursosListaHtml = (alunoObjeto.listaCursos || []).map(curso => `
+    <div style="background: #f8f9fa; border-left: 3px solid var(--primary-blue); padding: 8px 12px; margin-bottom: 8px; border-radius: 4px;">
+      <p style="margin:0; font-size: 14px;"><strong>Curso:</strong> ${curso.nome || '-'}</p>
+      <p style="margin:0; font-size: 12px; color: #666;">Valor: ${curso.valor || '-'} | Vencimento: ${curso.vencimento || '-'}</p>
+    </div>
+  `).join('');
+
   document.getElementById('actions-student-details').innerHTML = `
-    <p><strong>Email:</strong> ${aluno.Email || '-'}</p>
-    <p><strong>Telefone:</strong> ${aluno.Telefone || '-'}</p>
-    <p><strong>CPF:</strong> ${aluno.CPF || '-'}</p>
-    <p><strong>Valor:</strong> ${aluno.Valor || '-'} (${aluno.FormaPag || '-'})</p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+        <p style="margin:0;"><strong>Email:</strong> ${alunoObjeto.Email || '-'}</p>
+        <p style="margin:0;"><strong>Telefone:</strong> ${alunoObjeto.Telefone || '-'}</p>
+        <p style="margin:0;"><strong>CPF:</strong> ${alunoObjeto.CPF || '-'}</p>
+        <p style="margin:0;"><strong>Total de Cursos:</strong> ${totalCursos}</p>
+    </div>
+    <div style="margin-top: 10px;">
+        <p style="margin-bottom: 8px;"><strong>Detalhamento dos Contratos:</strong></p>
+        ${cursosListaHtml}
+    </div>
   `;
 
-  // 2. Preenche o Select com o Status Atual
-  // Tenta pegar o valor de diferentes formatos (string antiga ou objeto novo)
-  const tagAtual = aluno.StatusExtra?.tipo || aluno.StatusExtra || '';
-  
+  // 3. Status Extra
+  const tagAtual = alunoObjeto.StatusExtra?.tipo || alunoObjeto.StatusExtra || '';
   const select = document.getElementById("extra-status-select");
   if (select) select.value = tagAtual;
 
-  // 3. Preenche Propostas
-  const props = aluno.Propostas || {};
+  // 4. Lista de Cursos para Pagamento
+  const checkboxContainer = document.getElementById('course-checkbox-list');
+  if (checkboxContainer && alunoObjeto.listaCursos) {
+      checkboxContainer.innerHTML = alunoObjeto.listaCursos.map(curso => {
+          const valorNumerico = curso.valor ? parseFloat(curso.valor.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) : 0;
+          return `
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; background: #fff; padding: 5px 10px; border-radius: 5px;">
+                  <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                      <input type="checkbox" class="course-payment-check" value="${curso.id}" id="chk-${curso.id}" checked>
+                      <label for="chk-${curso.id}" style="font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
+                          ${curso.nome}
+                      </label>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                      <span style="font-size: 12px; font-weight: bold; color: #28a745;">R$</span>
+                      <input type="text" class="course-payment-amount" data-id="${curso.id}" 
+                             value="${valorNumerico.toLocaleString('pt-BR', {minimumFractionDigits: 2})}" 
+                             style="width: 90px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; text-align: right; font-weight: bold; color: #28a745;">
+                  </div>
+              </div>
+          `;
+      }).join('');
+  }
+
+  // 5. Preenche Propostas e vincula o evento de salvar
+  const props = alunoObjeto.Propostas || {};
   for(let i=1; i<=4; i++) {
       const el = document.getElementById(`prop-${i}`);
-      if(el) el.value = props[`p${i}`] || '';
+      if(el) {
+          el.value = props[`p${i}`] || '';
+          // VINCULAMOS O SALVAMENTO AQUI (Garante que salve ao sair do campo)
+          el.onblur = () => window.saveProposal(i);
+      }
   }
 
-  // 4. Atualiza botões de etapa (se houver essa função)
+  // 6. Atualiza botões de etapa (CORREÇÃO: Usando o nome correto alunoObjeto)
   if (typeof updateStageButtons === 'function') {
-      updateStageButtons(aluno);
+      updateStageButtons(alunoObjeto);
   }
 
-  // 5. Atualiza a cor do cabeçalho do Modal (Visual)
+  // 7. Atualiza cor do cabeçalho
   const modalHeader = document.querySelector('.actions-header');
   if (modalHeader) {
-      modalHeader.className = 'actions-header'; // Reseta classes para o padrão
-      
+      modalHeader.className = 'actions-header'; 
       if(tagAtual) {
-          // --- CORREÇÃO AQUI ---
-          // Usamos a variável 'tagAtual' (que vem do aluno) e não 'value'
-          const safe = String(tagAtual).replace(/[\s_]+/g, '-').toLowerCase();
-          
-          // Gera classe ex: header-status-link-agendado
+          const safe = String(tagAtual).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_]+/g, '-').toLowerCase();
           modalHeader.classList.add(`header-status-${safe}`);
       }
   }
 
-  // (Removido o window.showToast daqui, pois só deve aparecer ao salvar, não ao abrir)
-
-  // 6. Exibe o Modal
+  // 8. Exibe o Modal
   const overlay = document.getElementById('actions-modal-overlay');
   if (overlay) {
     overlay.classList.remove('modal-hidden');
@@ -401,92 +467,119 @@ export function updateStageButtons(aluno) {
   const tempBtn = document.getElementById("btn-next-template");
   const infoTxt = document.getElementById("last-action-info");
 
-  const callStep = (aluno.LigaEtapa || 0) + 1;
-  const tempStep = (aluno.TemplateEtapa || 0) + 1;
-
-  if (callBtn) callBtn.textContent = `📞 Ligar #${callStep}`;
-  if (tempBtn) tempBtn.textContent = `💬 Template #${tempStep}`;
+  if (callBtn) callBtn.textContent = `📞 Ligar #${(aluno.LigaEtapa || 0) + 1}`;
+  if (tempBtn) tempBtn.textContent = `💬 Template #${(aluno.TemplateEtapa || 0) + 1}`;
   
-  // Exibe quem fez a última ação
   if (infoTxt && aluno.UltimaAcao) {
-      const date = aluno.UltimaAcao.toDate ? aluno.UltimaAcao.toDate() : new Date(aluno.UltimaAcao);
-      const responsavel = aluno.UltimoResponsavel || 'Sistema';
-      infoTxt.innerHTML = `Última: ${date.toLocaleString('pt-BR')}<br><small>Por: ${responsavel}</small>`;
+      let date;
+      // TRATAMENTO ROBUSTO DE DATA
+      if (aluno.UltimaAcao.toDate) date = aluno.UltimaAcao.toDate();
+      else if (aluno.UltimaAcao instanceof Date) date = aluno.UltimaAcao;
+      else if (typeof aluno.UltimaAcao === 'string') date = new Date(aluno.UltimaAcao);
+      else date = null;
+
+      if (date && !isNaN(date.getTime())) {
+          infoTxt.innerHTML = `Última: ${date.toLocaleString('pt-BR')}<br><small>Por: ${aluno.UltimoResponsavel || 'Sistema'}</small>`;
+      } else {
+          infoTxt.textContent = 'Aguardando primeira ação...';
+      }
   } else if (infoTxt) {
-      infoTxt.textContent = '';
+      infoTxt.textContent = 'Sem interações recentes';
   }
 }
 window.updateStageButtons = updateStageButtons;
 
 export async function nextCallStage() {
-  if (!currentActionStudentId) return;
-  const aluno = window.cobrancaList.find(a => a.id === currentActionStudentId);
-  if (!aluno) return;
-
-  const novaEtapa = (aluno.LigaEtapa || 0) + 1;
-  const userEmail = getCurrentUserEmail(); 
-  
-  try {
-    const alunoRef = doc(db, COBRANCA_COLLECTION, currentActionStudentId);
-    await updateDoc(alunoRef, {
-      LigaEtapa: novaEtapa,
-      UltimaAcao: new Date(),
-      UltimoResponsavel: userEmail,
-      HistoricoLogs: arrayUnion({
-        tipo: 'ligacao',
-        detalhe: `Ligação #${novaEtapa} realizada`,
-        responsavel: userEmail,
-        timestamp: new Date().toISOString()
-      })
-    });
-
-    aluno.LigaEtapa = novaEtapa;
-    aluno.UltimaAcao = new Date();
-    aluno.UltimoResponsavel = userEmail;
+    if (!currentGroupedStudent) return;
     
-    updateStageButtons(aluno);
-    renderCobrancaList(window.cobrancaList);
+    const novaEtapa = (currentGroupedStudent.LigaEtapa || 0) + 1;
+    const userEmail = getCurrentUserEmail(); 
+    const agora = new Date();
+    
+    try {
+        const batch = writeBatch(db);
+        
+        currentGroupedStudent.todosIds.forEach(docId => {
+            batch.update(doc(db, COBRANCA_COLLECTION, docId), {
+                LigaEtapa: novaEtapa,
+                UltimaAcao: agora,
+                UltimoResponsavel: userEmail,
+                // ESSENCIAL: Grava o log para o filtro de exportação encontrar
+                HistoricoLogs: arrayUnion({
+                    tipo: 'ligacao',
+                    detalhe: `Ligação #${novaEtapa} registrada`,
+                    responsavel: userEmail,
+                    timestamp: agora.toISOString()
+                })
+            });
+        });
 
-  } catch (err) {
-    console.error(err);
-    alert("Erro ao salvar etapa.");
-  }
+        await batch.commit();
+
+        // Atualiza Memória Local
+        currentGroupedStudent.LigaEtapa = novaEtapa;
+        currentGroupedStudent.UltimaAcao = agora;
+        currentGroupedStudent.UltimoResponsavel = userEmail;
+
+        updateStageButtons(currentGroupedStudent);
+        renderCobrancaList(window.cobrancaList);
+
+    } catch (err) {
+        console.error("Erro ao registrar ligação:", err);
+    }
 }
 window.nextCallStage = nextCallStage;
 
 export async function nextTemplateStage() {
-  if (!currentActionStudentId) return;
-  const aluno = window.cobrancaList.find(a => a.id === currentActionStudentId);
-  if (!aluno) return;
-
-  const novaEtapa = (aluno.TemplateEtapa || 0) + 1;
-  const userEmail = getCurrentUserEmail();
-  
-  try {
-    const alunoRef = doc(db, COBRANCA_COLLECTION, currentActionStudentId);
-    await updateDoc(alunoRef, {
-      TemplateEtapa: novaEtapa,
-      UltimaAcao: new Date(),
-      UltimoResponsavel: userEmail,
-      HistoricoLogs: arrayUnion({
-        tipo: 'template',
-        detalhe: `Template #${novaEtapa} enviado`,
-        responsavel: userEmail,
-        timestamp: new Date().toISOString()
-      })
-    });
-
-    aluno.TemplateEtapa = novaEtapa;
-    aluno.UltimaAcao = new Date();
-    aluno.UltimoResponsavel = userEmail;
+    if (!currentGroupedStudent) return;
     
-    updateStageButtons(aluno);
-    renderCobrancaList(window.cobrancaList);
+    const novaEtapa = (currentGroupedStudent.TemplateEtapa || 0) + 1;
+    const userEmail = getCurrentUserEmail(); 
+    const agora = new Date();
+    
+    try {
+        const batch = writeBatch(db);
+        
+        // 1. Atualiza TODOS os cursos do aluno no Firebase (Batch)
+        currentGroupedStudent.todosIds.forEach(docId => {
+            batch.update(doc(db, COBRANCA_COLLECTION, docId), {
+                TemplateEtapa: novaEtapa,
+                UltimaAcao: agora,
+                UltimoResponsavel: userEmail,
+                HistoricoLogs: arrayUnion({
+                    tipo: 'template',
+                    detalhe: `Template #${novaEtapa} enviado (via grupo)`,
+                    responsavel: userEmail,
+                    timestamp: agora.toISOString()
+                })
+            });
+        });
 
-  } catch (err) {
-    console.error(err);
-    alert("Erro ao salvar etapa.");
-  }
+        await batch.commit();
+
+        // 2. Sincroniza a MEMÓRIA LOCAL (Para a interface atualizar sem gastar leituras)
+        currentGroupedStudent.todosIds.forEach(id => {
+            const idx = window.cobrancaList.findIndex(a => a.id === id);
+            if (idx > -1) {
+                window.cobrancaList[idx].TemplateEtapa = novaEtapa;
+                window.cobrancaList[idx].UltimaAcao = agora;
+                window.cobrancaList[idx].UltimoResponsavel = userEmail;
+            }
+        });
+
+        // 3. Atualiza o objeto do Modal para refletir a data na hora
+        currentGroupedStudent.TemplateEtapa = novaEtapa;
+        currentGroupedStudent.UltimaAcao = agora;
+        currentGroupedStudent.UltimoResponsavel = userEmail;
+
+        // 4. Atualiza os botões e a lista no fundo
+        updateStageButtons(currentGroupedStudent);
+        renderCobrancaList(window.cobrancaList);
+
+    } catch (err) {
+        console.error(err);
+        window.showToast("Erro ao registrar envio de template.", "error");
+    }
 }
 window.nextTemplateStage = nextTemplateStage;
 
@@ -494,175 +587,163 @@ window.nextTemplateStage = nextTemplateStage;
 // 6. PROPOSTAS COM LOG DE QUEM DIGITOU
 // -------------------------
 window.saveProposal = async function(index) {
-  if (!currentActionStudentId) return;
-  
-  const textArea = document.getElementById(`prop-${index}`);
-  const newText = textArea ? textArea.value : '';
-  
-  const aluno = window.cobrancaList.find(a => a.id === currentActionStudentId);
-  if(!aluno.Propostas) aluno.Propostas = {};
-  
-  const oldText = aluno.Propostas[`p${index}`] || '';
-  if (newText === oldText) return;
+    if (!currentGroupedStudent) return;
+    const textArea = document.getElementById(`prop-${index}`);
+    if (!textArea) return;
 
-  aluno.Propostas[`p${index}`] = newText;
-  const userEmail = getCurrentUserEmail();
+    const newText = textArea.value;
+    const userEmail = getCurrentUserEmail();
+    const agora = new Date();
+    const key = currentGroupedStudent.CPF || currentGroupedStudent.Email || currentGroupedStudent.Nome;
 
-  try {
-      await updateDoc(doc(db, COBRANCA_COLLECTION, currentActionStudentId), { 
-          Propostas: aluno.Propostas,
-          HistoricoLogs: arrayUnion({
-              tipo: 'proposta',
-              detalhe: `Editou Proposta ${index}`,
-              conteudo: newText.substring(0, 50) + "...", 
-              responsavel: userEmail,
-              timestamp: new Date().toISOString()
-          })
-      });
-      console.log(`Proposta ${index} salva por ${userEmail}`);
-  } catch(e) { console.error(e); }
+    // Sincroniza Cache Local e Global IMEDIATAMENTE
+    if (!currentGroupedStudent.Propostas) currentGroupedStudent.Propostas = {};
+    currentGroupedStudent.Propostas[`p${index}`] = newText;
+    
+    if (window.groupedCobrancaCache[key]) {
+        window.groupedCobrancaCache[key].Propostas = currentGroupedStudent.Propostas;
+    }
+
+    try {
+        const batch = writeBatch(db);
+        currentGroupedStudent.todosIds.forEach(docId => {
+            const updateData = {};
+            updateData[`Propostas.p${index}`] = newText;
+            updateData.UltimaAcao = agora;
+            updateData.UltimoResponsavel = userEmail;
+            batch.update(doc(db, COBRANCA_COLLECTION, docId), updateData);
+        });
+        await batch.commit();
+        
+        // Efeito visual de salvamento
+        textArea.style.backgroundColor = "#f0fff4"; 
+        setTimeout(() => textArea.style.backgroundColor = "", 800);
+    } catch (e) { console.error("Erro ao salvar proposta:", e); }
 };
 
 // -------------------------
 // 7. STATUS EXTRA & PAGAMENTO
 // -------------------------
 window.saveExtraStatus = async function () {
-  if (!currentActionStudentId) return;
+  // 1. Verifica se há um aluno selecionado (seja agrupado ou individual)
+  const alunoParaAtualizar = currentGroupedStudent || (currentActionStudentId ? { id: currentActionStudentId, todosIds: [currentActionStudentId] } : null);
+
+  if (!alunoParaAtualizar) return;
   
   const sel = document.getElementById('extra-status-select');
   const value = sel ? sel.value : '';
-  const userEmail = getCurrentUserEmail();
-  const docRef = doc(db, COBRANCA_COLLECTION, currentActionStudentId);
 
   try {
-    // 1. Salva ou Remove no Banco
-    if (value) {
-        await updateDoc(docRef, {
-          StatusExtra: { tipo: value, atualizadoEm: new Date(), por: userEmail },
-          UltimoResponsavel: userEmail,
-          DataTag: new Date() // Salva data para o cronômetro
-        });
-    } else {
-        await updateDoc(docRef, {
-          StatusExtra: deleteField(),
-          DataTag: deleteField(),
-          UltimoResponsavel: userEmail
-        });
-    }
-    
-    // 2. Atualiza a lista local e a tela
-    const idx = window.cobrancaList.findIndex(a => a.id === currentActionStudentId);
-    
-    if (idx > -1) {
-      // Atualiza memória
-      if (value) {
+    // 2. CHAMADA DA FUNÇÃO (Isso ativa a função que estava apagada!)
+    await salvarTagParaTodosOsCursos(alunoParaAtualizar, value);
+
+    // 3. Sincroniza a memória local para o card atualizar na tela sem F5
+    const ids = alunoParaAtualizar.todosIds || [alunoParaAtualizar.id];
+    ids.forEach(id => {
+      const idx = window.cobrancaList.findIndex(a => a.id === id);
+      if (idx > -1) {
+        if (value) {
           window.cobrancaList[idx].StatusExtra = { tipo: value };
           window.cobrancaList[idx].DataTag = new Date();
-      } else {
+        } else {
           delete window.cobrancaList[idx].StatusExtra;
           delete window.cobrancaList[idx].DataTag;
+        }
       }
-      
-      // Atualiza a lista atrás do modal
-      renderCobrancaList(window.cobrancaList);
-      
-      // --- CORREÇÃO DO ERRO AQUI ---
-      // Atualiza a cor do cabeçalho do Modal Aberto
-      const modalHeader = document.querySelector('.actions-header');
-      if (modalHeader) {
-          modalHeader.className = 'actions-header'; // Reseta classes
-          
-          if(value) {
-              // Troca ESPAÇOS (\s) e UNDERLINES (_) por hífen (-)
-              // Ex: "Link enviado" vira "link-enviado"
-              const safe = value.replace(/[\s_]+/g, '-').toLowerCase();
-              
-              // Adiciona classe válida: header-status-link-enviado
-              modalHeader.classList.add(`header-status-${safe}`);
-          }
+    });
+
+    // 4. Atualiza a lista visual e o cabeçalho do modal
+    renderCobrancaList(window.cobrancaList);
+    
+    const modalHeader = document.querySelector('.actions-header');
+    if (modalHeader) {
+      modalHeader.className = 'actions-header';
+      if (value) {
+        const safe = value.replace(/[\s_]+/g, '-').toLowerCase();
+        modalHeader.classList.add(`header-status-${safe}`);
       }
     }
 
-    window.showToast(value ? "Status atualizado!" : "Status removido!");
+    window.showToast(value ? "Status atualizado em todos os cursos!" : "Status removido!");
 
   } catch (error) { 
-      console.error(error); 
-      window.showToast("Erro ao atualizar.", "error");
+    console.error("Erro ao processar salvamento:", error); 
+    window.showToast("Erro ao atualizar os cursos.", "error");
   }
 };
 
 window.registerPayment = async function() {
-  if (!currentActionStudentId) return;
-  
-  const dateVal = document.getElementById('payment-date')?.value;
-  const originVal = document.getElementById('payment-origin')?.value;
-  const userEmail = getCurrentUserEmail();
+    if (!currentGroupedStudent) return;
 
-  // 1. Validação Visual
-  if (!dateVal || !originVal) {
-      return Swal.fire('Campos Obrigatórios', 'Preencha a data e a origem do pagamento.', 'warning');
-  }
-
-  // 2. Confirmação
-  const result = await Swal.fire({
-      title: 'Confirmar Baixa?',
-      text: "O status mudará para 'Pago' e o aluno sairá desta lista.",
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonColor: '#28a745',
-      cancelButtonColor: '#6c757d',
-      confirmButtonText: 'Sim, confirmar!',
-      cancelButtonText: 'Cancelar'
-  });
-
-  if (!result.isConfirmed) return;
-
-  try {
-    // 3. Loading
-    Swal.fire({ title: 'Processando...', didOpen: () => Swal.showLoading() });
-
-    // --- CORREÇÃO DE DATA AQUI ---
-    // Pega "2025-12-18" e divide em partes
-    const [ano, mes, dia] = dateVal.split('-').map(Number);
+    // 1. Captura os cursos marcados
+    const checkboxes = document.querySelectorAll('.course-payment-check:checked');
     
-    // Cria a data usando o horário do navegador (Local) e define para meio-dia (12h)
-    // Isso evita que fusos horários joguem a data para o dia anterior
-    const dataCorreta = new Date(ano, mes - 1, dia, 12, 0, 0);
+    if (checkboxes.length === 0) {
+        return Swal.fire('Atenção', 'Selecione pelo menos um curso para baixar.', 'warning');
+    }
 
-    await updateDoc(doc(db, COBRANCA_COLLECTION, currentActionStudentId), {
-      Status: 'Pago',
-      DataPagamento: dataCorreta, // Usa a data ajustada
-      OrigemPagamento: originVal,
-      BaixadoPor: userEmail
+    const dateVal = document.getElementById('payment-date')?.value;
+    const originVal = document.getElementById('payment-origin')?.value;
+    const userEmail = getCurrentUserEmail();
+
+    if (!dateVal || !originVal) {
+        return Swal.fire('Campos Obrigatórios', 'Preencha a data e a origem.', 'warning');
+    }
+
+    const result = await Swal.fire({
+        title: 'Confirmar Baixa?',
+        text: "Os valores editados serão registrados como o pagamento final destes cursos.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#28a745',
+        confirmButtonText: 'Sim, registrar!'
     });
-    
-    closeActionsModal();
 
-    // 4. Sucesso
-    Swal.fire('Baixa Realizada!', 'O pagamento foi registrado com sucesso.', 'success');
-    
-    loadCobrancaData();
-  } catch (error) { 
-      console.error(error);
-      Swal.fire('Erro', 'Não foi possível registrar o pagamento.', 'error');
-  }
-};
+    if (!result.isConfirmed) return;
 
-async function setExtraTag(studentId, tagName) {
     try {
-        const docRef = doc(db, COBRANCA_COLLECTION, studentId);
+        Swal.fire({ title: 'Processando...', didOpen: () => Swal.showLoading() });
+
+        const [ano, mes, dia] = dateVal.split('-').map(Number);
+        const dataCorreta = new Date(ano, mes - 1, dia, 12, 0, 0);
+
+        const batch = writeBatch(db);
         
-        await updateDoc(docRef, {
-            StatusExtra: tagName, // A tag (ex: "Promessa Pagamento")
-            DataTag: new Date()   // <--- O PULO DO GATO: Salva o momento exato
+        // 2. Iterar pelos itens selecionados para pegar o valor de cada input
+        checkboxes.forEach(cb => {
+            const docId = cb.value;
+            // Busca o input de valor correspondente a este curso (pelo data-id)
+            const inputValor = document.querySelector(`.course-payment-amount[data-id="${docId}"]`);
+            const valorFinal = inputValor ? inputValor.value : "0,00";
+
+            const docRef = doc(db, COBRANCA_COLLECTION, docId);
+            batch.update(docRef, {
+                Status: 'Pago',
+                DataPagamento: dataCorreta,
+                OrigemPagamento: originVal,
+                ValorPago: `R$ ${valorFinal}`, // Registramos o valor que foi efetivamente pago
+                BaixadoPor: userEmail,
+                HistoricoLogs: arrayUnion({
+                    tipo: "pagamento",
+                    detalhe: `Baixa com valor ajustado: R$ ${valorFinal} (${originVal})`,
+                    responsavel: userEmail,
+                    timestamp: new Date().toISOString()
+                })
+            });
         });
 
-        if(window.showToast) window.showToast("Tag aplicada!", "success");
-        loadCobrancaData(); // Recarrega a tela
-    } catch (e) {
-        console.error(e);
+        await batch.commit();
+        
+        closeActionsModal();
+        Swal.fire('Sucesso!', 'Baixa(s) realizada(s) com os valores informados.', 'success');
+        
+        if (typeof loadCobrancaData === 'function') loadCobrancaData();
+
+    } catch (error) { 
+        console.error(error);
+        Swal.fire('Erro', 'Falha ao processar pagamento.', 'error');
     }
-}
+};
 
 window.archiveStudent = async function(docId) {
   // 1. Substituindo o confirm nativo pelo SweetAlert2
@@ -704,33 +785,69 @@ window.archiveStudent = async function(docId) {
 // 8. EXPORTAR ATIVOS (SEM STATUS EXTRA)
 // -------------------------
 window.exportActiveCobranca = function() {
+    // 1. Verificações de segurança (Mantido da antiga)
     if (!window.cobrancaList || window.cobrancaList.length === 0) {
-        return alert("Não há dados carregados para exportar.");
+        if(window.showToast) window.showToast("Não há dados carregados para exportar.", "warning");
+        else alert("Não há dados carregados.");
+        return;
     }
 
+    // 2. Filtro (Mantido da antiga: Pega apenas quem NÃO tem StatusExtra)
     const dataToExport = window.cobrancaList.filter(aluno => {
         const temStatus = aluno.StatusExtra && aluno.StatusExtra.tipo && aluno.StatusExtra.tipo !== "";
         return !temStatus; 
     });
 
     if (dataToExport.length === 0) {
-        return alert("Nenhum aluno ativo 'sem status' encontrado para exportação.");
+        if(window.showToast) window.showToast("Nenhum contato sem tag encontrado.", "info");
+        else alert("Nenhum contato encontrado.");
+        return;
     }
 
-    let csvContent = "Telefone;Nome;Email;Valor\n";
+    // 3. Cabeçalho novo solicitado (Separado por vírgula)
+    let csvContent = "number,info_1,info_2,info_3\n";
 
     dataToExport.forEach(row => {
-        const clean = (txt) => (txt ? String(txt).replace(/;/g, " ") : "");
-        csvContent += `${clean(row.Telefone)};${clean(row.Nome)};${clean(row.Email)};${clean(row.Valor)}\n`;
+        // --- LÓGICA DE TRATAMENTO DO TELEFONE (NOVA) ---
+        let phone = (row.Telefone || "").toString().replace(/\D/g, ""); // Remove tudo que não é número
+
+        // A. Remove o 55 do início se o número for longo (maior que 11 dígitos, ex: 55419...)
+        if (phone.startsWith("55") && phone.length > 11) {
+            phone = phone.substring(2);
+        }
+
+        // B. Verifica se precisa do 9º dígito
+        // Se após limpar ficou com 10 dígitos (Ex: 41 8888 7777), insere o 9 na 3ª posição
+        if (phone.length === 10) {
+            const ddd = phone.substring(0, 2);
+            const numero = phone.substring(2);
+            phone = `${ddd}9${numero}`;
+        }
+        // -----------------------------------------------
+
+        // Função auxiliar para limpar vírgulas dos textos (pois a vírgula agora é separador)
+        const clean = (txt) => (txt ? String(txt).replace(/,/g, " ") : "");
+
+        // Mapeamento das colunas
+        const number = phone;
+        const info1  = clean(row.Nome);             // info_1: Nome
+        const info2  = clean(row.Email || "");      // info_2: Email
+        const info3  = clean(row.Curso || "");      // info_3: Curso
+
+        // Monta a linha
+        csvContent += `${number},${info1},${info2},${info3}\n`;
     });
 
+    // 4. Download do Arquivo (Mantido o BOM \ufeff para o Excel ler acentos corretamente)
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     
     const hoje = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    
     link.setAttribute("href", url);
-    link.setAttribute("download", `Alunos_Ativos_SemStatus_${hoje}.csv`);
+    // Nome do arquivo atualizado para identificar que é mailing
+    link.setAttribute("download", `Mailing_Cobranca_${hoje}.csv`);
     
     document.body.appendChild(link);
     link.click();
@@ -809,19 +926,76 @@ function renderPaymentsTable(list) {
             dataBaixa = d.toLocaleDateString('pt-BR');
         }
 
-        const valor = item.Valor || '-';
+        // LÓGICA DE PRIORIDADE: Prioriza o valor ajustado (ValorPago)
+        const valorExibido = item.ValorPago || item.Valor || '-';
+        
+        // Estilização extra para identificar quando o valor foi alterado
+        const estiloValor = item.ValorPago ? 'color: #28a745; font-weight: 700;' : 'font-weight: 600;';
+
         const responsavel = item.BaixadoPor || '<span style="color:#999; font-style:italic;">Não registrado</span>';
 
         tr.innerHTML = `
-            <td><strong>${dataBaixa}</strong></td>
-            <td>${item.Nome}</td>
-            <td>${valor}</td>
-            <td>${item.OrigemPagamento || '-'}</td>
-            <td style="color: #198754; font-weight: 600;">${responsavel}</td>
-        `;
-        tbody.appendChild(tr);
+        <td><strong>${dataBaixa}</strong></td>
+        <td>${item.Nome}</td>
+        <td style="${estiloValor}">${valorExibido}</td>
+        <td>
+            <span style="background: #e9ecef; padding: 4px 10px; border-radius: 4px; font-size: 12px; white-space: nowrap; display: inline-block; line-height: 1.2;">
+                ${item.OrigemPagamento || '-'}
+            </span>
+        </td>
+        <td style="color: #198754; font-weight: 600;">${responsavel}</td>
+    `;
+    tbody.appendChild(tr);
     });
 }
+
+window.openSchedulingForGrouped = async function() {
+    if (!currentGroupedStudent || !currentGroupedStudent.listaCursos) {
+        return Swal.fire('Erro', 'Dados do aluno não encontrados.', 'error');
+    }
+
+    const cursos = currentGroupedStudent.listaCursos;
+
+    // 1. Caso o aluno só tenha 1 curso, vai direto para o agendamento
+    if (cursos.length === 1) {
+        proceedToScheduling(cursos[0]);
+        return;
+    }
+
+    // 2. Caso tenha mais de um, abre o Swal para seleção
+    const optionsHtml = cursos.map((c, idx) => `
+        <div style="text-align: left; margin-bottom: 12px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 10px;" 
+             onclick="document.getElementById('radio-sched-${idx}').checked = true">
+            <input type="radio" name="swal-course-choice" id="radio-sched-${idx}" value="${idx}" ${idx === 0 ? 'checked' : ''} style="cursor:pointer; width: 18px; height: 18px;">
+            <label for="radio-sched-${idx}" style="cursor:pointer; flex: 1;">
+                <strong style="display:block; font-size: 14px; color: #333;">${c.nome}</strong>
+                <span style="font-size: 12px; color: #6A1B9A; font-weight: 700;">Valor: ${c.valor}</span>
+            </label>
+        </div>
+    `).join('');
+
+    const { value: selectedIndex } = await Swal.fire({
+        title: 'Selecionar Curso',
+        text: 'Para qual destes cursos você deseja agendar o link?',
+        html: `<div style="margin-top: 15px;">${optionsHtml}</div>`,
+        showCancelButton: true,
+        confirmButtonText: 'Continuar para Agendamento',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#6A1B9A',
+        preConfirm: () => {
+            const selected = document.querySelector('input[name="swal-course-choice"]:checked');
+            if (!selected) {
+                Swal.showValidationMessage('Selecione um curso para continuar');
+                return false;
+            }
+            return selected.value;
+        }
+    });
+
+    if (selectedIndex !== undefined) {
+        proceedToScheduling(cursos[selectedIndex]);
+    }
+};
 
 // Expor globalmente para o HTML acessar
 window.loadPaymentsList = loadPaymentsList;
@@ -925,84 +1099,83 @@ window.exportPaymentsExcel = async function() {
 // 10. EXPORTAR ALUNOS PENDENTES (Sem Tag E Sem Ligação Recente)
 // =========================================================
 window.exportNoAnswerStudents = function() {
-    // 1. Pergunta o intervalo
-    const horasInput = prompt("Exportar alunos SEM TAG e que NÃO receberam ligação nas últimas X horas:", "3");
+    const horasInput = prompt("Exportar alunos que não atenderam nas últimas X horas:", "3");
     if (horasInput === null) return; 
 
     const horas = parseFloat(horasInput.replace(',', '.'));
     if (isNaN(horas) || horas < 0) return alert("Digite um número válido.");
 
     const agora = new Date();
-    // Define o corte: Tudo antes de (Agora - 3h) é considerado "antigo"
     const tempoCorte = new Date(agora.getTime() - (horas * 60 * 60 * 1000));
 
-    // 2. Filtra a lista
     const listaParaExportar = window.cobrancaList.filter(aluno => {
-        
-        // CONDICÃO A: NÃO PODE TER TAG (Status Extra)
-        // Se tiver tag (Acordo, Recado, etc), ele já foi tratado -> SAI DA LISTA
-        const temTag = aluno.StatusExtra && aluno.StatusExtra.tipo && aluno.StatusExtra.tipo !== "";
+        // 1. Filtro de TAG: Se tiver tag ativa, geralmente não exportamos para "pesca"
+        const temTag = aluno.StatusExtra && (aluno.StatusExtra.tipo || aluno.StatusExtra) && (aluno.StatusExtra.tipo !== "" && aluno.StatusExtra !== "");
         if (temTag) return false; 
 
-        // CONDICÃO B: NÃO PODE TER LOG RECENTE
+        // 2. Lógica Principal:
         const logs = aluno.HistoricoLogs || [];
-        
-        // Verifica se existe ALGUM log de 'ligacao' feito DEPOIS do tempo de corte
-        const teveLigacaoRecente = logs.some(log => {
-            if (log.tipo !== 'ligacao') return false;
-            const dataLog = new Date(log.timestamp); 
-            return dataLog > tempoCorte; // Retorna TRUE se for recente (ex: 1h atrás)
+        const teveInteracaoRecente = logs.some(log => {
+            // Verifica se o log é de avanço de estágio (ligação ou template)
+            const ehLogAlvo = log.tipo === 'ligacao' || log.tipo === 'template';
+            if (!ehLogAlvo) return false;
+
+            const dataLog = new Date(log.timestamp);
+            return dataLog > tempoCorte; 
         });
 
-        // Se teve ligação recente -> SAI DA LISTA (já mexeram nele)
-        if (teveLigacaoRecente) return false;
+        if (teveInteracaoRecente) return false;
 
-        // Se chegou aqui: Não tem Tag E Não tem Ligação Recente -> ENTRA NA LISTA
         return true;
     });
 
     if (listaParaExportar.length === 0) {
-        return alert(`Nenhum aluno pendente encontrado (Sem tag e sem ligação nas últimas ${horas}h).`);
+        return alert(`Nenhum aluno encontrado com os critérios nas últimas ${horas}h.`);
     }
 
-    // 3. Confirmação
-    if(!confirm(`Encontrei ${listaParaExportar.length} alunos que não foram trabalhados nas últimas ${horas}h e estão sem tag.\nBaixar Excel?`)) return;
+    if(!confirm(`Deseja exportar ${listaParaExportar.length} alunos?`)) return;
 
-    // 4. Gera Excel
+    // Cabeçalho do arquivo com as novas colunas solicitadas
     let table = `
         <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
         <head><meta charset="UTF-8"></head>
         <body>
         <table border="1">
             <thead>
-                <tr style="background-color: #ff9800; color: white;"> <th>NOME</th>
+                <tr style="background-color: #007bff; color: white; font-weight: bold;">
+                    <th>NOME</th>
+                    <th>EMAIL</th>
                     <th>TELEFONE</th>
-                    <th>E-MAIL</th>
+                    <th>PRODUTO</th>
                     <th>VALOR</th>
-                    <th>VENCIMENTO</th>
-                    <th>DIAS ATRASO</th>
-                    <th>ÚLTIMA AÇÃO (ANTIGA)</th>
+                    <th>DATA DE VENCIMENTO</th>
                 </tr>
             </thead>
             <tbody>
     `;
 
     listaParaExportar.forEach(item => {
-        let ultimaAcaoStr = 'Nunca';
-        if (item.UltimaAcao) {
-            const d = item.UltimaAcao.toDate ? item.UltimaAcao.toDate() : new Date(item.UltimaAcao);
-            ultimaAcaoStr = d.toLocaleString('pt-BR');
+        // --- LÓGICA DE TELEFONE (REGRA DOS 13 DÍGITOS) ---
+        let phone = (item.Telefone || "").toString().replace(/\D/g, "");
+
+        if (phone.startsWith("55") && phone.length !== 13) {
+            const ddi_ddd = phone.substring(0, 4); 
+            const resto = phone.substring(4);      
+            phone = ddi_ddd + "9" + resto;         
         }
+
+        // Formatação do Valor para padrão monetário básico se necessário
+        const valorFormatado = item.Valor || item.valor || "0,00";
+        const vencimento = item.Vencimento || item.vencimento || "-";
 
         table += `
             <tr>
-                <td>${item.Nome || '-'}</td>
-                <td style="mso-number-format:'@'">${item.Telefone || '-'}</td>
-                <td>${item.Email || '-'}</td>
-                <td>${item.Valor || '-'}</td>
-                <td>${item.Vencimento || '-'}</td>
-                <td>${item.diasAtrasoCalculado || '-'}</td>
-                <td>${ultimaAcaoStr}</td>
+                <td>${item.Nome || item.nome || '-'}</td>
+                <td>${item.Email || item.email || '-'}</td>
+                <td style="mso-number-format:'@'">${phone || '-'}</td>
+                <td>${item.Curso || item.curso || '-'}</td>
+                <td>${valorFormatado}</td>
+                <td>${vencimento}</td>
             </tr>
         `;
     });
@@ -1013,9 +1186,7 @@ window.exportNoAnswerStudents = function() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    // Nome sugestivo: Pendentes_3h.xls
-    const nomeArquivo = `Pendentes_${horas}h_${agora.getHours()}h${agora.getMinutes()}.xls`;
-    a.download = nomeArquivo;
+    a.download = `Export_Sem_Resposta_${horas}h.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

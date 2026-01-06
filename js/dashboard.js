@@ -299,23 +299,80 @@ function renderThirdCobSection(dataStrict, dataFullCurr, dataFullPrev) {
         disparos += (d.disparos || 0);
     });
 
+    // Atualiza KPIs
     updateEl('kpi-3cob-debito', formatMoney(debito));
     updateEl('kpi-3cob-pago', formatMoney(pagto));
     updateEl('kpi-3cob-disparos', disparos);
-    updateEl('kpi-3cob-conv', debito>0 ? ((pagto/debito)*100).toFixed(2)+'%' : '0%');
+    updateEl('kpi-3cob-conv', debito > 0 ? ((pagto / debito) * 100).toFixed(2) + '%' : '0%');
 
-    // Gráfico Pizza (Mantido com dados estritos)
+    // GRÁFICO 1: PIZZA (DÉBITOS X PAGAMENTOS)
+    // GRÁFICO 1: PIZZA (DÉBITOS X PAGAMENTOS)
+    const emAberto = Math.max(0, debito - pagto);
+    
     const optionsPie = {
-        series: [Math.max(0, debito - pagto), pagto],
-        chart: { type: 'donut', height: 300 },
+        series: [emAberto, pagto],
+        chart: { 
+            type: 'donut', 
+            height: 320,
+            fontFamily: 'Helvetica, Arial, sans-serif'
+        },
         labels: ['Em Aberto', 'Recuperado'],
-        colors: ['#34495e', '#2ecc71'],
-        legend: { position: 'bottom' },
-        dataLabels: { enabled: true, formatter: (val) => val.toFixed(1) + "%" }
+        colors: ['#34495e', '#2ecc71'], 
+        
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '65%',
+                    labels: {
+                        show: true,
+                        name: { show: true },
+                        value: {
+                            show: true,
+                            fontSize: '22px',
+                            fontWeight: 'bold',
+                            color: '#2c3e50',
+                            // Formata o valor individual ao passar o mouse (ex: R$ 300 Mil)
+                            formatter: (val) => formatCompact(parseFloat(val)) 
+                        },
+                        total: {
+                            show: true,
+                            showAlways: true, // Garante que apareça sempre
+                            label: '% Recuperado', // Novo Título
+                            fontSize: '14px',
+                            color: '#6c757d',
+                            
+                            // AQUI ESTÁ A MUDANÇA PARA %
+                            formatter: function (w) {
+                                const totals = w.globals.seriesTotals;
+                                const aberto = totals[0] || 0;
+                                const recup = totals[1] || 0;
+                                const totalGeral = aberto + recup;
+
+                                if (totalGeral === 0) return "0%";
+
+                                // Calcula a porcentagem de recuperação
+                                const percent = (recup / totalGeral) * 100;
+                                return percent.toFixed(1) + "%";
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        dataLabels: { enabled: false },
+        legend: { position: 'bottom', markers: { radius: 12 } },
+        tooltip: {
+            enabled: true,
+            y: {
+                formatter: (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            }
+        }
     };
 
-    if (chart3CobPie) { chart3CobPie.updateSeries(optionsPie.series); } 
-    else { 
+    if (chart3CobPie) { 
+        // Agora basta atualizar os dados, o total se corrige sozinho
+        chart3CobPie.updateSeries(optionsPie.series); 
+    } else { 
         const el = document.querySelector("#chart-3cob-pie");
         if(el) {
             chart3CobPie = new ApexCharts(el, optionsPie); 
@@ -323,9 +380,9 @@ function renderThirdCobSection(dataStrict, dataFullCurr, dataFullPrev) {
         }
     }
 
-    // --- PARTE 2: GRÁFICO DE EVOLUÇÃO (Usa dataFullCurr e dataFullPrev) ---
+    // --- PARTE 2: GRÁFICO DE EVOLUÇÃO (LINHA) ---
     
-    // Mapa: Semana (1-5) -> Valores
+    // Agrupa dados por Semana (1 a 5)
     const evoMap = { 1:{}, 2:{}, 3:{}, 4:{}, 5:{} };
     for(let i=1; i<=5; i++) evoMap[i] = { currDeb:0, currPag:0, prevDeb:0, prevPag:0 };
 
@@ -338,14 +395,14 @@ function renderThirdCobSection(dataStrict, dataFullCurr, dataFullPrev) {
         return 5;
     };
 
-    // Processa Mês Atual COMPLETO
+    // Soma Mês Atual
     dataFullCurr.forEach(d => {
         const w = getWeek(d.dateStr);
         evoMap[w].currDeb += (d.debitos || 0);
         evoMap[w].currPag += (d.pagamentos || 0);
     });
 
-    // Processa Mês Anterior COMPLETO
+    // Soma Mês Anterior
     dataFullPrev.forEach(d => {
         const w = getWeek(d.dateStr);
         evoMap[w].prevDeb += (d.debitos || 0);
@@ -367,62 +424,67 @@ function renderThirdCobSection(dataStrict, dataFullCurr, dataFullPrev) {
 
     const optionsEvo = {
         series: [
-            { name: 'Mês Passado', data: seriesPrev }, // Série Índice 0 (Sem rótulo)
-            { name: 'Mês Atual', data: seriesCurr }    // Série Índice 1 (Com rótulo)
+            { name: 'Mês Passado', data: seriesPrev },
+            { name: 'Mês Atual', data: seriesCurr }
         ],
         chart: { 
             type: 'line', 
-            height: 300, 
+            height: 320, 
             toolbar: { show: false },
-            parentHeightOffset: 0
+            fontFamily: 'Helvetica, Arial, sans-serif'
+        },
+        colors: ['#adb5bd', '#e67e22'], // Cinza (Passado) e Laranja (Atual - Tema da Seção)
+        stroke: { 
+            curve: 'smooth', 
+            width: 3 
         },
         
-        // Garante comportamento de linha
-        plotOptions: { line: {} },
-
-        // --- RÓTULOS APENAS NO MÊS ATUAL ---
+        // --- RÓTULOS ESTILO PILL (IGUAL AO MOM) ---
         dataLabels: { 
             enabled: true, 
-            enabledOnSeries: [1], // <--- O SEGREDO: Ativa só na Série 1 (Mês Atual)
+            enabledOnSeries: [1], // Só mostra no mês atual
             formatter: (v) => v + '%',
-            textAnchor: 'middle',
-            offsetY: -10, // Flutua um pouco acima da bolinha
             style: { 
-                fontSize: '10px', 
-                colors: ['#333'],
+                fontSize: '11px', 
+                colors: ['#fff'], // Texto branco
                 fontWeight: 'bold'
             },
             background: { 
                 enabled: true, 
-                foreColor: '#ffffff', 
-                padding: 4, 
-                borderRadius: 4,
-                borderWidth: 1, 
-                borderColor: '#ccc',
+                foreColor: '#fff', 
+                padding: 6, 
+                borderRadius: 4, // Borda arredondada (Pill)
+                borderWidth: 0, 
                 opacity: 0.9,
                 dropShadow: { enabled: false }
-            }
+            },
+            offsetY: -5
         },
-        // -----------------------------------
+        // ------------------------------------------
 
-        stroke: { curve: 'smooth', width: 3 },
-        xaxis: { categories: categories },
-        colors: ['#adb5bd', '#e67e22'], // Cinza (0) e Laranja (1)
+        markers: {
+            size: 5,
+            hover: { size: 7 }
+        },
+        xaxis: { 
+            categories: categories,
+            axisBorder: { show: false },
+            axisTicks: { show: false }
+        },
         yaxis: { 
             labels: { formatter: (v) => v + '%' },
             min: 0,
             forceNiceScale: true 
         },
         legend: { position: 'top' },
-        title: { text: undefined },
+        grid: {
+            borderColor: '#f1f3fa',
+            padding: { top: 20 }
+        },
         tooltip: {
-            enabled: true,
             shared: true,
             intersect: false,
             y: { formatter: (val) => val + "%" }
-        },
-        grid: {
-            padding: { top: 20, bottom: 10, left: 10, right: 10 }
         }
     };
 
@@ -486,26 +548,116 @@ function renderMoMChart(curr, prev) {
 }
 
 function renderStatusChart(history) {
+    // 1. Processamento
     const porEtapa = {};
     history.forEach(d => {
         const n = d.etapa || 'Outros';
         if(!porEtapa[n]) porEtapa[n]={deb:0, pag:0};
-        porEtapa[n].deb += d.debitos; porEtapa[n].pag += d.pagamentos;
+        porEtapa[n].deb += d.debitos; 
+        porEtapa[n].pag += d.pagamentos;
     });
-    const cats = Object.keys(porEtapa).sort();
-    const sDeb = cats.map(c=>porEtapa[c].deb);
-    const sPag = cats.map(c=>porEtapa[c].pag);
     
+    const cats = Object.keys(porEtapa).sort();
+    const sDeb = cats.map(c => porEtapa[c].deb);
+    const sPag = cats.map(c => porEtapa[c].pag);
+
+    // Encontrar o MAIOR valor entre todos para calcular a proporção
+    const allValues = [...sDeb, ...sPag];
+    const maxValue = Math.max(...allValues);
+
     const opts = {
-        series: [{name:'Débitos',data:sDeb}, {name:'Pagamentos',data:sPag}],
-        chart: {type:'bar', height:350, toolbar:{show:false}},
-        plotOptions:{bar:{horizontal:true, dataLabels:{position:'top'}}},
-        dataLabels:{enabled:true, formatter:v=>"R$ "+v.toLocaleString('pt-BR',{maximumFractionDigits:0}), offsetX:30, style:{colors:['#333']}},
-        colors:['#007bff','#28a745'],
-        xaxis:{categories:cats}
+        series: [
+            { name: 'Débitos', data: sDeb },
+            { name: 'Pagamentos', data: sPag }
+        ],
+        chart: {
+            type: 'bar',
+            height: 380,
+            toolbar: { show: false },
+            fontFamily: 'Helvetica, Arial, sans-serif'
+        },
+        colors: ['#0070C0', '#A6CAEC'], // Cores Solicitadas
+        
+        plotOptions: {
+            bar: {
+                horizontal: true,
+                borderRadius: 3,
+                barHeight: '70%',
+                dataLabels: {
+                    position: 'top' // Ponta direita da barra
+                }
+            }
+        },
+        dataLabels: {
+            enabled: true,
+            textAnchor: 'start', // Começa a escrever do ponto para a direita
+            offsetX: 10,         // Distância padrão
+            style: {
+                colors: ['#333'], 
+                fontSize: '11px',
+                fontWeight: 700
+            },
+            formatter: function (val) {
+                let formatted;
+                
+                // Formatação do número
+                if (val >= 1000000) formatted = "R$ " + (val / 1000000).toFixed(1) + " Mi";
+                else if (val >= 1000) formatted = "R$ " + (val / 1000).toFixed(0) + " Mil";
+                else if (val === 0) return "";
+                else formatted = val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+                // --- O TRUQUE DO ESPAÇAMENTO ---
+                // Se o valor for muito pequeno (menor que 10% do maior valor),
+                // adicionamos espaços vazios antes para empurrar o texto.
+                if (maxValue > 0 && (val / maxValue) < 0.10) {
+                    // Adiciona caracteres invisíveis ou espaços para empurrar
+                    return "      " + formatted; 
+                }
+                
+                return formatted;
+            }
+        },
+        stroke: {
+            show: true,
+            width: 1,
+            colors: ['#fff']
+        },
+        xaxis: {
+            categories: cats,
+            labels: {
+                formatter: function (val) {
+                    if (val >= 1000000) return (val / 1000000).toFixed(0) + "M";
+                    return (val / 1000).toFixed(0) + "k";
+                },
+                style: { colors: '#adb5bd' }
+            }
+        },
+        yaxis: {
+            labels: {
+                style: { fontSize: '13px', fontWeight: 600, colors: '#2c3e50' }
+            }
+        },
+        grid: {
+            borderColor: '#f1f3fa',
+            padding: { right: 80 }
+        },
+        tooltip: {
+            shared: true,
+            intersect: false,
+            y: { formatter: (val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
+        },
+        legend: {
+            position: 'top',
+            horizontalAlign: 'left',
+            markers: { radius: 12 }
+        }
     };
-    if(chartStatus){ chartStatus.updateOptions({xaxis:{categories:cats}}); chartStatus.updateSeries(opts.series); }
-    else{ 
+
+    if(chartStatus){ 
+        chartStatus.updateOptions({ xaxis: { categories: cats }, colors: opts.colors, plotOptions: opts.plotOptions, dataLabels: opts.dataLabels, grid: opts.grid }); 
+        chartStatus.updateSeries(opts.series); 
+    }
+    else { 
         const el = document.querySelector("#chart-bar-status");
         if(el) {
             chartStatus = new ApexCharts(el, opts); 
@@ -515,13 +667,82 @@ function renderStatusChart(history) {
 }
 
 function renderMetaChart(a, t) {
-    const p = t>0 ? Math.round((a/t)*100) : 0;
-    const opts = { series:[p], chart:{type:'radialBar', height:340}, plotOptions:{radialBar:{hollow:{size:'65%'}, dataLabels:{value:{offsetY:10, fontSize:'30px', show:true, formatter:v=>v+'%'}}}}, fill:{colors:['#28a745']}, labels:['Recuperação'] };
-    const txt = document.getElementById('meta-text-display');
-    if(txt) txt.innerText = `${formatMoney(a)} / ${formatMoney(t)}`;
+    // CORREÇÃO AQUI: Usamos parseFloat() para garantir que seja número, não texto
+    const p = t > 0 ? parseFloat(((a / t) * 100).toFixed(1)) : 0;
     
-    if(chartMeta) chartMeta.updateSeries([p]); 
-    else { 
+    const opts = { 
+        series: [p], 
+        chart: {
+            type: 'radialBar', 
+            height: 340,
+            fontFamily: 'Helvetica, Arial, sans-serif'
+        }, 
+        plotOptions: {
+            radialBar: {
+                hollow: {
+                    size: '68%',
+                    margin: 15,
+                },
+                track: {
+                    background: '#f0f2f5',
+                    strokeWidth: '100%',
+                },
+                dataLabels: {
+                    show: true,
+                    name: {
+                        offsetY: -10,
+                        show: true,
+                        color: '#6c757d',
+                        fontSize: '14px',
+                        fontWeight: 500
+                    },
+                    value: {
+                        offsetY: 8,
+                        color: '#2c3e50',
+                        fontSize: '34px',
+                        fontWeight: 'bold',
+                        show: true,
+                        formatter: function (val) {
+                            return val + "%";
+                        }
+                    }
+                }
+            }
+        },
+        fill: {
+            type: 'gradient',
+            gradient: {
+                shade: 'dark',
+                type: 'horizontal',
+                gradientToColors: ['#A6CAEC'],
+                stops: [0, 100]
+            }
+        },
+        stroke: {
+            lineCap: 'round'
+        },
+        colors: ['#A6CAEC'],
+        labels: ['Recuperação'] 
+    };
+
+    // Atualização do Texto no Rodapé
+    const txt = document.getElementById('meta-text-display');
+    if(txt) {
+        txt.innerHTML = `
+            <span style="color: #0070C0; font-weight: 800; font-size: 1.1em;">
+                ${formatMoney(a)}
+            </span>
+            <span style="color: #ccc; margin: 0 6px;">/</span>
+            <span style="color: #6c757d; font-weight: 600;">
+                ${formatMoney(t)}
+            </span>
+        `;
+    }
+    
+    // Renderiza ou Atualiza
+    if(chartMeta) {
+        chartMeta.updateSeries([p]); 
+    } else { 
         const el = document.querySelector("#chart-gauge-meta");
         if(el) {
             chartMeta = new ApexCharts(el, opts); 
@@ -531,15 +752,97 @@ function renderMetaChart(a, t) {
 }
 
 function renderPaymentChart(map) {
-    Object.keys(map).forEach(k=>{if(map[k]===0)delete map[k]});
-    const opts = { series:Object.values(map), labels:Object.keys(map), chart:{type:'donut', height:320}, colors:['#008FFB', '#00E396', '#FEB019', '#FF4560'] };
-    if(chartPayment){ chartPayment.updateOptions({labels:Object.keys(map)}); chartPayment.updateSeries(Object.values(map)); }
-    else{ 
-        const el = document.querySelector("#chart-pie-payment");
-        if(el) {
-            chartPayment = new ApexCharts(el, opts); 
-            chartPayment.render(); 
+    // 1. Definição das Categorias e Cores Fixas
+    const categoriesConfig = [
+        { key: 'Cartão de Crédito', color: '#2962FF' }, // Azul
+        { key: 'Pix',               color: '#00C853' }, // Verde
+        { key: 'Boleto',            color: '#FFAB00' }  // Laranja/Amarelo
+    ];
+
+    // 2. Extrai os dados na ordem certa
+    const finalLabels = [];
+    const finalSeries = [];
+    const finalColors = [];
+
+    categoriesConfig.forEach(cat => {
+        // Tenta achar a chave no map (considerando variações comuns)
+        // O map deve conter contagens (inteiros), ex: { 'Pix': 15, 'Boleto': 4 ... }
+        let mapVal = 0;
+        
+        if (cat.key === 'Cartão de Crédito') mapVal = map['Cartão'] || map['Cartão de Crédito'] || 0;
+        else if (cat.key === 'Pix') mapVal = map['Pix'] || 0;
+        else if (cat.key === 'Boleto') mapVal = map['Boleto'] || 0;
+
+        if (mapVal > 0) { 
+            finalLabels.push(cat.key);
+            finalSeries.push(mapVal);
+            finalColors.push(cat.color);
         }
+    });
+
+    const total = finalSeries.reduce((a, b) => a + b, 0);
+    if (total === 0) return; 
+
+    // 3. Configurações do Gráfico
+    const opts = {
+        series: finalSeries,
+        labels: finalLabels,
+        colors: finalColors,
+        chart: {
+            type: 'donut',
+            height: 320,
+            fontFamily: 'Helvetica, Arial, sans-serif'
+        },
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '65%',
+                    labels: {
+                        show: true,
+                        name: { show: true },
+                        value: {
+                            show: true,
+                            // AQUI MUDOU: Apenas número inteiro formatado
+                            formatter: function (val) {
+                                return parseInt(val).toLocaleString('pt-BR');
+                            }
+                        },
+                        total: {
+                            show: true,
+                            showAlways: true,
+                            label: 'Total',
+                            // AQUI MUDOU: Apenas número inteiro formatado
+                            formatter: function (w) {
+                                const sum = w.globals.seriesTotals.reduce((a, b) => a + b, 0);
+                                return sum.toLocaleString('pt-BR');
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        dataLabels: { enabled: false },
+        legend: { position: 'bottom', horizontalAlign: 'center' },
+        tooltip: {
+            y: {
+                // AQUI MUDOU: Tooltip mostrando apenas número
+                formatter: function(val) {
+                    return parseInt(val).toLocaleString('pt-BR');
+                }
+            }
+        }
+    };
+
+    // 4. Renderização ou Atualização
+    const el = document.querySelector("#chart-pie-payment");
+    if (!el) return;
+
+    if (chartPayment) {
+        chartPayment.updateOptions({ labels: finalLabels, colors: finalColors });
+        chartPayment.updateSeries(finalSeries);
+    } else {
+        chartPayment = new ApexCharts(el, opts);
+        chartPayment.render();
     }
 }
 
