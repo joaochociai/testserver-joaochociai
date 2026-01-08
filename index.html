@@ -26,9 +26,14 @@
             
             <p style="color: #666; margin-bottom: 20px;">Utilize sua conta corporativa para acessar o sistema.</p>
 
-            <button onclick="loginWithGoogle()" type="button" class="google-btn" style="background-color: white; color: #555; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; width: 100%; padding: 12px; border-radius: 4px; cursor: pointer; font-weight: 600; transition: background 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 20px; margin-right: 12px;">
-                ENTRAR COM GOOGLE
+            <button id="google-btn" onclick="loginWithGoogle()" type="button" class="google-btn">
+                <div class="btn-content">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" style="width: 20px; margin-right: 12px;">
+                    ENTRAR COM GOOGLE
+                </div>
+                <div class="btn-loader hidden">
+                    <i class="fas fa-circle-notch fa-spin"></i>
+                </div>
             </button>
 
             <p id="login-message" style="margin-top: 15px;"></p>
@@ -105,6 +110,18 @@
                     </button>
                     <div id="menu-juridico-lig" class="menu-content">
                         <button id="btn-juridico-ligacoes" class="nav-tab sector-btn" data-sector="juridico" onclick="window.showTab('tab-juridico-ligacoes', this)">1° Jurídica</button>
+                    </div>
+                </div>
+
+                <div class="menu-group sector-group" data-sector="disparos">
+                    <div class="sector-title">DISPAROS</div>
+                    <button class="menu-header" onclick="window.toggleMenu('menu-disparos')">
+                        <i class="fas fa-paper-plane"></i> Gestão de Envios <span class="arrow">▼</span>
+                    </button>
+                    <div id="menu-disparos" class="menu-content">
+                        <button class="nav-tab sector-btn" data-sector="disparos" onclick="window.showTab('tab-disparos-registros', this)">
+                            Registros Diários
+                        </button>
                     </div>
                 </div>
             </div>
@@ -511,7 +528,7 @@
                     </div>
                     <button class="import-btn admin-only" onclick="window.openImportModal()">📥 Imp.</button>
                     <button class="action-btn secondary admin-only" onclick="window.exportActiveCobranca()" >📤 Lig.</button>
-                    <button class="action-btn secondary" onclick="window.exportNoAnswerStudents()" >📵 Temp.</button>
+                    <button class="action-btn secondary admin-only" onclick="window.exportNoAnswerStudents()" >📵 Temp.</button>
                     <button class="action-btn admin-only" onclick="window.openPaymentsModal()" style="background-color: #198754; color: white; border-color: #198754; margin-right: 10px;">💲 Pags.</button>
                 </div>
                 <div id="cobranca-list" class="cards-container"></div>
@@ -761,6 +778,108 @@
                     <div id="escala-view-content"></div> 
                 </div>
             </div>
+
+            <div id="tab-disparos-registros" class="tab-content hidden">
+                <div class="page-header-standard">
+                    <h1 class="page-title-blue">REGISTROS DE DISPAROS</h1>
+                    <div class="header-line"></div>
+                </div>
+
+                <div class="entry-card-container">
+                    <div class="entry-card-header">
+                        <span><i class="fas fa-keyboard"></i> NOVO LANÇAMENTO RÁPIDO</span>
+                    </div>
+                    <div class="entry-card-body">
+                        <div class="input-cell">
+                            <label><i class="fas fa-calendar-day"></i> DATA</label>
+                            <input type="text" id="quick-disparo-data" placeholder="00/00/0000">
+                        </div>
+                        
+                        <div class="input-cell">
+                            <label><i class="fas fa-tag"></i> DESCRIÇÃO DO DISPARO</label>
+                            <select id="quick-disparo-tipo">
+                                <option value="" disabled selected>Selecione o tipo...</option>
+                                <optgroup label="Active">
+                                <option value="Active - Lembrete Dia do vencimento">Active - Lembrete Dia do vencimento</option>
+                                <option value="Active - 1ª Cobrança">Active - 1ª Cobrança</option>
+                                <option value="Active - Lembrete 7 Dias">Active - Lembrete 7 Dias</option>
+                                <option value="Active - 2ª Cobrança">Active - 2ª Cobrança</option>
+                                <option value="Active - 3ª Cobrança">Active - 3ª Cobrança</option>
+                            </optgroup>
+                            <optgroup label="Infobip [GURU]">
+                                <option value="[GURU] - Lembrete Dia do vencimento">[GURU] - Lembrete Dia do vencimento</option>
+                                <option value="[GURU] - 1ª Cobrança">[GURU] - 1ª Cobrança</option>
+                                <option value="[GURU] - Lembrete 7 Dias">[GURU] - Lembrete 7 Dias</option>
+                                <option value="[GURU] - 2ª Cobrança">[GURU] - 2ª Cobrança</option>
+                                <option value="[GURU] - 3ª Cobrança">[GURU] - 3ª Cobrança</option>
+                            </optgroup>
+                            <optgroup label="Juridica">
+                                <option value="1ª Cobrança Jurídica">1ª Cobrança Jurídica</option>
+                                <option value="2ª Cobrança Jurídica">2ª Cobrança Jurídica</option>
+                            </optgroup>
+                            <optgroup label="Bloqueios/Desbloqueios">
+                                <option value="Bloqueio 2° Cobrança">Bloqueio 2° Cobrança</option>
+                                <option value="Desbloqueio entre 2° e 3° Cobrança">Desbloqueio entre 2° e 3° Cobrança</option>
+                                <option value="Desbloqueio 3° Cobrança">Desbloqueio 3° Cobrança</option>
+                            </optgroup>
+                            </select>
+                        </div>
+                        <div class="input-cell" style="max-width: 120px;">
+                            <label><i class="fas fa-layer-group"></i> QTD</label>
+                            <input type="number" id="quick-disparo-qtd" placeholder="0">
+                        </div>
+
+                        <div class="input-cell">
+                            <label><i class="fas fa-dollar-sign"></i> VALOR TOTAL</label>
+                            <input type="text" id="quick-disparo-valor" placeholder="0,00">
+                        </div>
+
+                        <div class="input-cell-btn">
+                            <button onclick="window.saveQuickDisparo()" class="btn-add-record">
+                                <i class="fas fa-plus"></i> ADICIONAR
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="calendar-dashboard-container">
+                    <div class="calendar-header">
+                        <button onclick="changeMonth(-1)" class="btn-nav"><i class="fas fa-chevron-left"></i></button>
+                        <h2 id="current-month-display">Janeiro 2026</h2>
+                        <button onclick="changeMonth(1)" class="btn-nav"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    
+                    <div class="calendar-grid-header">
+                        <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+                    </div>
+                    <div id="calendar-body" class="calendar-grid-body">
+                        </div>
+                </div>
+            </div>
+
+            <div id="modal-dia-disparos" class="modal-overlay hidden">
+                <div class="modal-card-wide">
+                    <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 id="modal-date-title" style="margin: 0; color: #1e293b;">Registros</h3>
+                        <button onclick="closeDisparoModal()" class="close-btn" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+                    </div>
+                    <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                        <table class="medcof-table">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left;">DESCRIÇÃO</th>
+                                    <th>RESPONSÁVEL</th>
+                                    <th>QTD</th>
+                                    <th>VALOR</th>
+                                    <th>AÇÕES</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-table-body">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -802,11 +921,11 @@
                     </select>
                     <div class="sequence-panel">
                         <div style="display: flex; gap: 10px; width: 100%;">
-                            <button id="btn-next-call" class="action-step-btn-large seq-call" onclick="window.nextCallStage()">
-                                📞 Ligar
+                            <button id="btn-next-call" class="action-step-btn-large seq-call" onclick="window.LigaçãoAtendida()">
+                                📞 ATENDEU
                             </button>
-                            <button id="btn-next-template" class="action-step-btn-large seq-msg" onclick="window.nextTemplateStage()">
-                                💬 Template
+                            <button id="btn-next-template" class="action-step-btn-large seq-msg" onclick="window.VerificaçãoFeita()">
+                                ✅ VERIFICADO
                             </button>
                         </div>
                         <p id="last-action-info" class="info-text" style="margin-top: 10px; font-size: 12px; color: #666;"></p>

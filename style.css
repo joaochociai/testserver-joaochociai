@@ -634,12 +634,39 @@ h1 {
     width: 100%;
     align-items: center;
     transition: transform 0.2s;
+    position: relative;
+    overflow: hidden;
 }
 
 .cobranca-card:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.1);
     border-color: var(--primary-blue);
+}
+
+.card-verified-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    box-shadow: 0 2px 5px rgba(46, 125, 50, 0.2);
+    border: 1px solid #c8e6c9;
+    z-index: 10;
+    animation: badgePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Animação de surgimento suave */
+@keyframes badgePop {
+    0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+    100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
 .card-info h3 {
@@ -3000,12 +3027,44 @@ canvas {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-.medcof-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+.medcof-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-top: 10px; background: white;}
 
 /* --- CORREÇÃO: CABEÇALHOS E TEXTO --- */
 .medcof-table th { 
     color: #64748b; font-size: 11px; font-weight: 700; padding: 10px 15px; 
     text-align: left; text-transform: uppercase; letter-spacing: 1px;
+}
+
+.medcof-table thead th {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 12px 15px;
+    border-bottom: 2px solid #e2e8f0;
+    text-align: left;
+}
+
+.medcof-table tbody td {
+    padding: 14px 15px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 13px;
+    color: #334155;
+    vertical-align: middle;
+}
+
+.medcof-table .col-data { width: 110px; text-align: center; }
+.medcof-table .col-desc { width: auto; text-align: left; }
+.medcof-table .col-resp { width: 150px; text-align: left; }
+.medcof-table .col-qtd  { width: 80px; text-align: center; }
+.medcof-table .col-valor { width: 140px; text-align: right; font-weight: 600; }
+.medcof-table .col-acoes { width: 70px; text-align: center; }
+
+/* Efeito de hover para facilitar a leitura da linha */
+.medcof-table tbody tr:hover {
+    background-color: #f1f5f9;
+    transition: background 0.2s;
 }
 
 /* --- CORREÇÃO: VISIBILIDADE DO NOME --- */
@@ -3328,3 +3387,375 @@ input:checked + .medcof-slider:before { transform: translateX(22px); }
     100% { transform: rotate( 0.0deg) }
 }
 
+.google-btn {
+    background-color: white;
+    color: #555;
+    border: 1px solid #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: relative; /* Essencial para centralizar o loader */
+    min-height: 46px;    /* Mantém a altura fixa */
+}
+
+.google-btn:hover {
+    background-color: #f8f9fa;
+}
+
+/* Oculta o texto e ícone quando carregando */
+.google-btn.is-loading {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.google-btn.is-loading .btn-content {
+    visibility: hidden;
+    opacity: 0;
+}
+
+.google-btn.is-loading .btn-loader {
+    display: block !important;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #4285F4;
+}
+
+.google-btn img {
+    width: 20px;
+    margin-right: 12px;
+}
+
+.auth-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: white; /* Mesma cor de fundo do seu sistema */
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 9999;
+    visibility: hidden; opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.auth-overlay.active {
+    visibility: visible; opacity: 1;
+}
+
+.spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #4285F4;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* Container Principal do Card de Entrada */
+.entry-card-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    border: 1px solid #e0e6ed;
+    margin-bottom: 25px;
+    overflow: hidden;
+}
+
+.entry-card-header {
+    background: #f8f9fa;
+    padding: 8px 18px;
+    border-bottom: 1px solid #e0e6ed;
+    font-size: 11px;
+    font-weight: 800;
+    color: #4a5568;
+    letter-spacing: 0.5px;
+}
+
+.entry-card-body {
+    display: flex;
+    gap: 15px;
+    padding: 18px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+/* Estilização das "Células" de Input */
+.input-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 140px;
+}
+
+.input-cell label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #718096;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.input-cell input, .input-cell select {
+    height: 40px;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    padding: 0 12px;
+    font-size: 13px;
+    color: #2d3748;
+    transition: all 0.2s;
+    background: #fff;
+}
+
+.input-cell input:focus, .input-cell select:focus {
+    border-color: #3182ce;
+    box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+    outline: none;
+}
+
+/* Botão Estilizado */
+.btn-add-record {
+    background: linear-gradient(135deg, #3182ce, #2c5282);
+    color: white;
+    border: none;
+    height: 40px;
+    padding: 0 25px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-add-record:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(44, 82, 130, 0.3);
+}
+
+/* style.css - Estilização Moderna das Pastas */
+
+.folders-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 16px; /* Espaçamento maior e mais limpo entre os cards */
+    margin-top: 24px;
+}
+
+/* O Cartão Principal */
+.day-folder {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px; /* Bordas mais arredondadas */
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); /* Sombra suave */
+}
+
+.day-folder:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: #cbd5e0;
+}
+
+/* Cabeçalho Clicável */
+.folder-header {
+    background: #f8fafc;
+    padding: 18px 24px; /* Mais espaçamento interno */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid transparent; /* Transição suave da borda */
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.folder-header:hover {
+    background: #f1f5f9;
+}
+
+/* Título e Ícone da Data */
+.folder-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.folder-icon {
+    color: #3b82f6; /* Azul vibrante */
+    font-size: 20px;
+    background: #dbeafe; /* Fundo azul claro */
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.folder-date {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b; /* Texto escuro para contraste */
+}
+
+/* Estatísticas e Ícone de Expansão */
+.folder-stats {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-size: 14px;
+    color: #64748b;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stat-value {
+    font-weight: 700;
+    color: #334155;
+    font-size: 15px;
+}
+
+.badge-count {
+    background: #e0f2fe;
+    color: #0284c7;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Ícone de Seta (Chevron) */
+.expand-icon {
+    color: #94a3b8;
+    transition: transform 0.3s ease, color 0.3s ease;
+    font-size: 14px;
+}
+
+/* Conteúdo Expansível (Tabela) com Animação */
+.folder-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1); /* Animação suave */
+    background: #ffffff;
+}
+
+.folder-content-inner {
+    padding: 24px;
+    border-top: 1px solid #e2e8f0;
+}
+
+/* --- Estados Ativos (Quando a pasta está aberta) --- */
+.day-folder.active .folder-header {
+    background: #ffffff; /* Fundo branco quando aberto */
+    border-bottom-color: #e2e8f0;
+}
+
+.day-folder.active .expand-icon {
+    transform: rotate(180deg); /* Gira a seta */
+    color: #3b82f6; /* Seta fica azul */
+}
+
+.day-folder.active .folder-content {
+    max-height: 1000px; /* Altura suficiente para mostrar o conteúdo */
+}
+
+/* Pequeno ajuste na tabela dentro da pasta */
+.folder-content .medcof-table {
+    margin-top: 0;
+    box-shadow: none;
+    border: 1px solid #f1f5f9;
+}
+
+.calendar-dashboard-container {
+    background: white;
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;
+    margin-bottom: 20px;
+}
+
+.calendar-grid-header, .calendar-grid-body {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+}
+
+.calendar-grid-header div {
+    text-align: center;
+    font-weight: bold;
+    color: #64748b;
+    padding: 10px;
+}
+
+.calendar-day {
+    min-height: 100px;
+    border: 1px solid #f1f5f9;
+    border-radius: 10px;
+    padding: 8px;
+    cursor: pointer;
+    transition: 0.2s;
+    background: #fdfdfd;
+}
+
+.calendar-day:hover { background: #f1f5f9; transform: translateY(-2px); }
+
+.day-number { font-weight: bold; color: #1e293b; margin-bottom: 5px; }
+
+.day-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.badge-disparos { font-size: 10px; background: #dbeafe; color: #1e40af; padding: 2px 5px; border-radius: 4px; }
+.badge-valor { font-size: 10px; background: #dcfce7; color: #166534; padding: 2px 5px; border-radius: 4px; }
+
+/* Estilos para o Modal de Calendário */
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.6); /* Overlay escuro */
+    backdrop-filter: blur(4px); /* Efeito de desfoque ao fundo */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.modal-card-wide {
+    background: white;
+    width: 90%;
+    max-width: 800px;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
