@@ -36,56 +36,21 @@ export async function loadCobrancaData() {
 
     const rawList = [];
     const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0); // Zera hora para cálculo de dias
+    hoje.setHours(0, 0, 0, 0); 
 
-    // Loop inicial para processar dados e checar Tags
     querySnapshot.forEach((docSnap) => {
+        // Apenas montamos o objeto aluno, sem a lógica de "Faxineiro"
         let aluno = { id: docSnap.id, ...docSnap.data() };
-
-        // ============================================================
-        // ⏰ "FAXINEIRO": VERIFICA SE A TAG EXPIROU (3 DIAS)
-        // ============================================================
-        // Normaliza o nome da tag para verificar
-        const tagAtual = aluno.StatusExtra?.tipo || aluno.StatusExtra;
-
-        // LISTA DE EXCEÇÕES: Tags que NUNCA expiram
-        const tagsPermanentes = ['Link agendado', 'Jurídica'];
-
-        // Só entra na verificação se tiver tag, tiver data E NÃO FOR PERMANENTE
-        if (tagAtual && aluno.DataTag && !tagsPermanentes.includes(tagAtual)) {
-            
-            const dataTag = aluno.DataTag.toDate ? aluno.DataTag.toDate() : new Date(aluno.DataTag);
-            const diffTempo = new Date() - dataTag;
-            const diasPassados = diffTempo / (1000 * 60 * 60 * 24);
-
-            if (diasPassados >= 3) {
-                console.log(`Tag expirada: ${tagAtual} para ${aluno.Nome}. Limpando...`);
-
-                aluno.StatusExtra = null;
-                aluno.DataTag = null;
-
-                const docRef = doc(db, COBRANCA_COLLECTION, aluno.id);
-                updateDoc(docRef, {
-                    StatusExtra: deleteField(),
-                    DataTag: deleteField()
-                }).catch(err => console.error("Erro ao remover tag:", err));
-            }
-        }
-        // ============================================================
-
         rawList.push(aluno);
     });
 
     // --- FILTRO: JANELA DE 31 A 45 DIAS ---
     window.cobrancaList = rawList.filter(aluno => {
-        // 1. Se já pagou, remove
         if (aluno.Status === 'Pago') return false;
 
-        // 2. Se não tem vencimento, mostra por segurança
         if (!aluno.Vencimento) return true;
 
-        // 3. Cálculo de dias de atraso
-        const dataVenc = parseDateBR(aluno.Vencimento); // Certifique-se que essa função existe
+        const dataVenc = parseDateBR(aluno.Vencimento); 
         if (!dataVenc) return true; 
         
         dataVenc.setHours(0, 0, 0, 0);
@@ -93,14 +58,12 @@ export async function loadCobrancaData() {
         const diffTime = hoje - dataVenc;
         const diasAtraso = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        // Salva para exibir no card
         aluno.diasAtrasoCalculado = diasAtraso;
 
-        // REGRA: Mostrar apenas entre 31 e 45 dias (Jurídico é >= 45)
+        // REGRA: Mostrar apenas entre 31 e 45 dias
         return diasAtraso >= 31 && diasAtraso < 45;
     });
 
-    // Atualiza contador KPI
     const kpiEl = document.getElementById('total-active-count');
     if (kpiEl) kpiEl.textContent = window.cobrancaList.length;
 
@@ -171,6 +134,16 @@ export function renderCobrancaList(data) {
           groupedMap[key].DataTag = item.DataTag;
           groupedMap[key].StatusExtra = item.StatusExtra;
       }
+
+      // 🔥 AJUSTE DE SEGURANÇA: Sincroniza a verificação MAIS RECENTE do grupo
+      // Isso garante que o check apareça se qualquer curso foi verificado
+      if (item.UltimaVerificacao) {
+          const dataItem = item.UltimaVerificacao.toDate ? item.UltimaVerificacao.toDate() : new Date(item.UltimaVerificacao);
+          const dataAtual = groupedMap[key].UltimaVerificacao ? (groupedMap[key].UltimaVerificacao.toDate ? groupedMap[key].UltimaVerificacao.toDate() : new Date(groupedMap[key].UltimaVerificacao)) : new Date(0);
+          if (dataItem > dataAtual) {
+              groupedMap[key].UltimaVerificacao = item.UltimaVerificacao;
+          }
+      }
     }
   });
 
@@ -181,6 +154,23 @@ export function renderCobrancaList(data) {
       const keyParaBotao = (aluno.CPF || aluno.Email || aluno.Nome).replace(/'/g, "\\'");
       const tagNome = aluno.StatusExtra?.tipo || aluno.StatusExtra || null;
       
+      // ============================================================
+      // 🕒 LÓGICA DO CHECK ESTILIZADO (VERIFICADO < 2H)
+      // ============================================================
+      let checkVerificadoHTML = '';
+      if (aluno.UltimaVerificacao) {
+          const dataVerif = aluno.UltimaVerificacao.toDate ? aluno.UltimaVerificacao.toDate() : new Date(aluno.UltimaVerificacao);
+          const diffMs = new Date() - dataVerif;
+          const diffHoras = diffMs / (1000 * 60 * 60);
+
+          if (diffHoras < 4) {
+              checkVerificadoHTML = `
+                  <div class="card-verified-badge" title="Verificado recentemente">
+                      <i class="fas fa-check"></i>
+                  </div>`;
+          }
+      }
+
       // Badge de dias (Pílula amarela)
       const diasLabel = aluno.diasAtrasoCalculado 
           ? `<span style="background:#fff3cd; color:#856404; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:bold; margin-left:8px; border: 1px solid #ffeeba;">${aluno.diasAtrasoCalculado} dias</span>`
@@ -188,7 +178,6 @@ export function renderCobrancaList(data) {
 
       const dataLimite = aluno.Data1Jur ? (typeof formatDateUTC === 'function' ? formatDateUTC(aluno.Data1Jur) : aluno.Data1Jur) : 'N/A';
 
-      // Gerador de cursos compacto (Evita amontoamento)
       const cursosHTML = aluno.listaCursos.map(c => `
         <div style="border-left: 3px solid #007bff; padding-left: 10px; margin-bottom: 6px; background: #fdfdfd; padding: 5px 10px; border-radius: 4px;">
            <span style="font-size:13px; display:block; color: #333;"><strong>Curso:</strong> ${c.nome || '-'}</span>
@@ -201,9 +190,9 @@ export function renderCobrancaList(data) {
       card.className = `cobranca-card status-${safeClass}`;
   
       card.innerHTML = `
-        <div class="card-info">
+        ${checkVerificadoHTML} <div class="card-info">
           <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 10px;">
-             <h3 style="margin:0; font-size: 1.1rem;">${aluno.Nome}</h3>
+             <h3 style="margin:0; font-size: 1.1rem; padding-right: 35px;">${aluno.Nome}</h3>
              ${aluno.listaCursos.length > 1 ? `<span style="background:#e7f1ff; color:#007bff; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold;">${aluno.listaCursos.length} CURSOS</span>` : ''}
           </div>
           
@@ -360,7 +349,6 @@ export function openActionsModal(alunoObjeto) {
   if (!alunoObjeto) return;
 
   // 1. Sincronização Global
-  // Armazenamos na variável que as funções saveProposal/nextCallStage utilizam
   currentGroupedStudent = alunoObjeto;
   window.currentActionStudentId = alunoObjeto.id; 
 
@@ -467,8 +455,9 @@ export function updateStageButtons(aluno) {
   const tempBtn = document.getElementById("btn-next-template");
   const infoTxt = document.getElementById("last-action-info");
 
-  if (callBtn) callBtn.textContent = `📞 Ligar #${(aluno.LigaEtapa || 0) + 1}`;
-  if (tempBtn) tempBtn.textContent = `💬 Template #${(aluno.TemplateEtapa || 0) + 1}`;
+  // Nomes atualizados para a nova regra
+  if (callBtn) callBtn.textContent = `📞 ATENDEU #${(aluno.LigaEtapa || 0) + 1}`;
+  if (tempBtn) tempBtn.textContent = `✅ VERIFICADO #${(aluno.TemplateEtapa || 0) + 1}`;
   
   if (infoTxt && aluno.UltimaAcao) {
       let date;
@@ -489,14 +478,44 @@ export function updateStageButtons(aluno) {
 }
 window.updateStageButtons = updateStageButtons;
 
-export async function nextCallStage() {
+export async function LigaçãoAtendida() {
     if (!currentGroupedStudent) return;
-    
+
+    const { value: explicacao } = await Swal.fire({
+        title: 'Explicação do Atendimento',
+        input: 'textarea',
+        inputLabel: 'O que foi conversado com o aluno?',
+        inputPlaceholder: 'Ex: Prometeu pagar amanhã...',
+        showCancelButton: true,
+        confirmButtonText: 'Salvar Detalhes',
+        cancelButtonText: 'Cancelar',
+        allowOutsideClick: false,
+        inputValidator: (value) => {
+            if (!value) return 'Você precisa descrever o atendimento para prosseguir!';
+        }
+    });
+
+    if (!explicacao) return;
+
     const novaEtapa = (currentGroupedStudent.LigaEtapa || 0) + 1;
     const userEmail = getCurrentUserEmail(); 
     const agora = new Date();
-    
+
+    // --- FORMATAÇÃO DO TIMESTAMP PARA P4 ---
+    // Resultado: "06/01/26 16:32"
+    const dia = String(agora.getDate()).padStart(2, '0');
+    const mes = String(agora.getMonth() + 1).padStart(2, '0');
+    const ano = String(agora.getFullYear()).slice(-2);
+    const hora = String(agora.getHours()).padStart(2, '0');
+    const min = String(agora.getMinutes()).padStart(2, '0');
+    const timestampFormatado = `${dia}/${mes}/${ano} ${hora}:${min}`;
+
+    // Recupera o que já existe no p4 e adiciona o novo no topo com quebra de linha
+    const valorP4Atual = (currentGroupedStudent.Propostas && currentGroupedStudent.Propostas.p4) ? currentGroupedStudent.Propostas.p4 : "";
+    const novoTextoP4 = `${timestampFormatado} - ${explicacao}${valorP4Atual ? '\n' + valorP4Atual : ''}`;
+
     try {
+        Swal.fire({ title: 'Salvando...', didOpen: () => Swal.showLoading() });
         const batch = writeBatch(db);
         
         currentGroupedStudent.todosIds.forEach(docId => {
@@ -504,10 +523,10 @@ export async function nextCallStage() {
                 LigaEtapa: novaEtapa,
                 UltimaAcao: agora,
                 UltimoResponsavel: userEmail,
-                // ESSENCIAL: Grava o log para o filtro de exportação encontrar
+                "Propostas.p4": novoTextoP4, // Grava no campo P4 conforme solicitado
                 HistoricoLogs: arrayUnion({
-                    tipo: 'ligacao',
-                    detalhe: `Ligação #${novaEtapa} registrada`,
+                    tipo: 'ligacao_atendida',
+                    detalhe: `Atendimento #${novaEtapa}: ${explicacao}`,
                     responsavel: userEmail,
                     timestamp: agora.toISOString()
                 })
@@ -516,21 +535,35 @@ export async function nextCallStage() {
 
         await batch.commit();
 
-        // Atualiza Memória Local
+        // Sincroniza Cache Local e UI
+        currentGroupedStudent.todosIds.forEach(id => {
+            const idx = window.cobrancaList.findIndex(a => a.id === id);
+            if (idx > -1) {
+                window.cobrancaList[idx].LigaEtapa = novaEtapa;
+                if(!window.cobrancaList[idx].Propostas) window.cobrancaList[idx].Propostas = {};
+                window.cobrancaList[idx].Propostas.p4 = novoTextoP4;
+            }
+        });
+
         currentGroupedStudent.LigaEtapa = novaEtapa;
-        currentGroupedStudent.UltimaAcao = agora;
-        currentGroupedStudent.UltimoResponsavel = userEmail;
+        if(!currentGroupedStudent.Propostas) currentGroupedStudent.Propostas = {};
+        currentGroupedStudent.Propostas.p4 = novoTextoP4;
 
         updateStageButtons(currentGroupedStudent);
         renderCobrancaList(window.cobrancaList);
+        
+        // Atualiza o textarea no modal se ele estiver aberto
+        const p4Element = document.getElementById('prop-4');
+        if(p4Element) p4Element.value = novoTextoP4;
 
+        Swal.fire('Registrado!', 'Atendimento salvo e P4 atualizado.', 'success');
     } catch (err) {
-        console.error("Erro ao registrar ligação:", err);
+        console.error(err);
     }
 }
-window.nextCallStage = nextCallStage;
+window.LigaçãoAtendida = LigaçãoAtendida;
 
-export async function nextTemplateStage() {
+export async function VerificaçãoFeita() {
     if (!currentGroupedStudent) return;
     
     const novaEtapa = (currentGroupedStudent.TemplateEtapa || 0) + 1;
@@ -540,15 +573,15 @@ export async function nextTemplateStage() {
     try {
         const batch = writeBatch(db);
         
-        // 1. Atualiza TODOS os cursos do aluno no Firebase (Batch)
         currentGroupedStudent.todosIds.forEach(docId => {
             batch.update(doc(db, COBRANCA_COLLECTION, docId), {
                 TemplateEtapa: novaEtapa,
+                UltimaVerificacao: agora, // Ativa o check visual de 2h
                 UltimaAcao: agora,
                 UltimoResponsavel: userEmail,
                 HistoricoLogs: arrayUnion({
-                    tipo: 'template',
-                    detalhe: `Template #${novaEtapa} enviado (via grupo)`,
+                    tipo: 'verificacao',
+                    detalhe: `Aluno verificado no sistema #${novaEtapa}`,
                     responsavel: userEmail,
                     timestamp: agora.toISOString()
                 })
@@ -557,31 +590,30 @@ export async function nextTemplateStage() {
 
         await batch.commit();
 
-        // 2. Sincroniza a MEMÓRIA LOCAL (Para a interface atualizar sem gastar leituras)
+        // 2. SINCRONIZAÇÃO DA MEMÓRIA LOCAL (Para o check aparecer sem F5)
         currentGroupedStudent.todosIds.forEach(id => {
             const idx = window.cobrancaList.findIndex(a => a.id === id);
             if (idx > -1) {
                 window.cobrancaList[idx].TemplateEtapa = novaEtapa;
+                window.cobrancaList[idx].UltimaVerificacao = agora;
                 window.cobrancaList[idx].UltimaAcao = agora;
-                window.cobrancaList[idx].UltimoResponsavel = userEmail;
             }
         });
 
-        // 3. Atualiza o objeto do Modal para refletir a data na hora
+        currentGroupedStudent.UltimaVerificacao = agora;
         currentGroupedStudent.TemplateEtapa = novaEtapa;
-        currentGroupedStudent.UltimaAcao = agora;
-        currentGroupedStudent.UltimoResponsavel = userEmail;
 
-        // 4. Atualiza os botões e a lista no fundo
         updateStageButtons(currentGroupedStudent);
         renderCobrancaList(window.cobrancaList);
+        
+        // Pequeno feedback visual
+        if (window.showToast) window.showToast("Verificação registrada!");
 
     } catch (err) {
-        console.error(err);
-        window.showToast("Erro ao registrar envio de template.", "error");
+        console.error("Erro ao verificar:", err);
     }
 }
-window.nextTemplateStage = nextTemplateStage;
+window.VerificaçãoFeita = VerificaçãoFeita;
 
 // -------------------------
 // 6. PROPOSTAS COM LOG DE QUEM DIGITOU
@@ -949,54 +981,6 @@ function renderPaymentsTable(list) {
     });
 }
 
-window.openSchedulingForGrouped = async function() {
-    if (!currentGroupedStudent || !currentGroupedStudent.listaCursos) {
-        return Swal.fire('Erro', 'Dados do aluno não encontrados.', 'error');
-    }
-
-    const cursos = currentGroupedStudent.listaCursos;
-
-    // 1. Caso o aluno só tenha 1 curso, vai direto para o agendamento
-    if (cursos.length === 1) {
-        proceedToScheduling(cursos[0]);
-        return;
-    }
-
-    // 2. Caso tenha mais de um, abre o Swal para seleção
-    const optionsHtml = cursos.map((c, idx) => `
-        <div style="text-align: left; margin-bottom: 12px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 10px;" 
-             onclick="document.getElementById('radio-sched-${idx}').checked = true">
-            <input type="radio" name="swal-course-choice" id="radio-sched-${idx}" value="${idx}" ${idx === 0 ? 'checked' : ''} style="cursor:pointer; width: 18px; height: 18px;">
-            <label for="radio-sched-${idx}" style="cursor:pointer; flex: 1;">
-                <strong style="display:block; font-size: 14px; color: #333;">${c.nome}</strong>
-                <span style="font-size: 12px; color: #6A1B9A; font-weight: 700;">Valor: ${c.valor}</span>
-            </label>
-        </div>
-    `).join('');
-
-    const { value: selectedIndex } = await Swal.fire({
-        title: 'Selecionar Curso',
-        text: 'Para qual destes cursos você deseja agendar o link?',
-        html: `<div style="margin-top: 15px;">${optionsHtml}</div>`,
-        showCancelButton: true,
-        confirmButtonText: 'Continuar para Agendamento',
-        cancelButtonText: 'Cancelar',
-        confirmButtonColor: '#6A1B9A',
-        preConfirm: () => {
-            const selected = document.querySelector('input[name="swal-course-choice"]:checked');
-            if (!selected) {
-                Swal.showValidationMessage('Selecione um curso para continuar');
-                return false;
-            }
-            return selected.value;
-        }
-    });
-
-    if (selectedIndex !== undefined) {
-        proceedToScheduling(cursos[selectedIndex]);
-    }
-};
-
 // Expor globalmente para o HTML acessar
 window.loadPaymentsList = loadPaymentsList;
 
@@ -1045,24 +1029,40 @@ window.exportPaymentsExcel = async function() {
                         <th>DATA DO PAGAMENTO</th>
                         <th>RESPONSÁVEL PELO LINK</th>
                         <th>CLASSIFICAÇÃO DO PAGAMENTO</th>
+                        <th>HORÁRIO DA BAIXA (LOG)</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
-        // Helper para formatar data
+        // Helper para formatar data curta (DD/MM/AAAA)
         const fmt = (d) => {
             if (!d) return '-';
             const dateObj = d.toDate ? d.toDate() : new Date(d);
             return isNaN(dateObj) ? '-' : dateObj.toLocaleDateString('pt-BR');
         };
 
+        // Helper para formatar Data e Hora Completa (DD/MM/AAAA HH:mm:ss)
+        const fmtDateTime = (d) => {
+            if (!d) return '-';
+            // Converte a string ISO do log em objeto Date
+            const dateObj = new Date(d);
+            return isNaN(dateObj) ? '-' : dateObj.toLocaleDateString('pt-BR') + ' ' + dateObj.toLocaleTimeString('pt-BR');
+        };
+
         list.forEach(item => {
+            // Busca o log específico no array HistoricoLogs fornecido
+            const logPagamento = (item.HistoricoLogs || []).find(log => log.tipo === "pagamento");
+
+            // Se encontrar o log, formata o campo timestamp (string ISO)
+            const timestampLog = logPagamento ? fmtDateTime(logPagamento.timestamp) : '-';
+
             table += `
                 <tr>
                     <td>${item.Nome || '-'}</td>
                     <td>${item.Email || '-'}</td>
-                    <td style="mso-number-format:'@'">${item.CPF || '-'}</td> <td style="mso-number-format:'@'">${item.Telefone || '-'}</td>
+                    <td style="mso-number-format:'@'">${item.CPF || '-'}</td> 
+                    <td style="mso-number-format:'@'">${item.Telefone || '-'}</td>
                     <td>${item.Curso || '-'}</td>
                     <td>${item.FormaPag || '-'}</td>
                     <td>${item.Valor || '-'}</td>
@@ -1072,6 +1072,7 @@ window.exportPaymentsExcel = async function() {
                     <td>${fmt(item.DataPagamento)}</td>
                     <td>${item.BaixadoPor || '-'}</td>
                     <td>${item.OrigemPagamento || '-'}</td>
+                    <td>${timestampLog}</td>
                 </tr>
             `;
         });
@@ -1109,15 +1110,14 @@ window.exportNoAnswerStudents = function() {
     const tempoCorte = new Date(agora.getTime() - (horas * 60 * 60 * 1000));
 
     const listaParaExportar = window.cobrancaList.filter(aluno => {
-        // 1. Filtro de TAG: Se tiver tag ativa, geralmente não exportamos para "pesca"
+        // 1. FILTRO DE TAG: Exclui qualquer aluno que possua StatusExtra
         const temTag = aluno.StatusExtra && (aluno.StatusExtra.tipo || aluno.StatusExtra) && (aluno.StatusExtra.tipo !== "" && aluno.StatusExtra !== "");
         if (temTag) return false; 
 
-        // 2. Lógica Principal:
+        // 2. LÓGICA DE LOGS: Exclui se teve ATENDEU (ligacao_atendida)
         const logs = aluno.HistoricoLogs || [];
         const teveInteracaoRecente = logs.some(log => {
-            // Verifica se o log é de avanço de estágio (ligação ou template)
-            const ehLogAlvo = log.tipo === 'ligacao' || log.tipo === 'template';
+            const ehLogAlvo = log.tipo === 'ligacao_atendida';
             if (!ehLogAlvo) return false;
 
             const dataLog = new Date(log.timestamp);
@@ -1130,12 +1130,12 @@ window.exportNoAnswerStudents = function() {
     });
 
     if (listaParaExportar.length === 0) {
-        return alert(`Nenhum aluno encontrado com os critérios nas últimas ${horas}h.`);
+        return alert(`Nenhum aluno sem resposta encontrado nas últimas ${horas}h.`);
     }
 
     if(!confirm(`Deseja exportar ${listaParaExportar.length} alunos?`)) return;
 
-    // Cabeçalho do arquivo com as novas colunas solicitadas
+    // ... (restante da lógica de montagem da tabela e download permanece igual)
     let table = `
         <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
         <head><meta charset="UTF-8"></head>
@@ -1155,27 +1155,21 @@ window.exportNoAnswerStudents = function() {
     `;
 
     listaParaExportar.forEach(item => {
-        // --- LÓGICA DE TELEFONE (REGRA DOS 13 DÍGITOS) ---
         let phone = (item.Telefone || "").toString().replace(/\D/g, "");
-
         if (phone.startsWith("55") && phone.length !== 13) {
             const ddi_ddd = phone.substring(0, 4); 
             const resto = phone.substring(4);      
             phone = ddi_ddd + "9" + resto;         
         }
 
-        // Formatação do Valor para padrão monetário básico se necessário
-        const valorFormatado = item.Valor || item.valor || "0,00";
-        const vencimento = item.Vencimento || item.vencimento || "-";
-
         table += `
             <tr>
-                <td>${item.Nome || item.nome || '-'}</td>
-                <td>${item.Email || item.email || '-'}</td>
+                <td>${item.Nome || '-'}</td>
+                <td>${item.Email || '-'}</td>
                 <td style="mso-number-format:'@'">${phone || '-'}</td>
-                <td>${item.Curso || item.curso || '-'}</td>
-                <td>${valorFormatado}</td>
-                <td>${vencimento}</td>
+                <td>${item.Curso || '-'}</td>
+                <td>${item.Valor || "0,00"}</td>
+                <td>${item.Vencimento || "-"}</td>
             </tr>
         `;
     });

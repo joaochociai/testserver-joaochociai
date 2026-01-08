@@ -143,6 +143,18 @@ onAuthStateChanged(auth, async (user) => {
         }
         window.initDashboard = dashModule.initDashboard;
     }
+
+    if (isAdmin || sectors.includes("disparos")) {
+    try {
+        const disparosModule = await import('./disparos.js');
+        // Carrega os dados iniciais se a função existir
+        if (disparosModule?.loadDisparosData) {
+            disparosModule.loadDisparosData();
+        }
+    } catch (err) {
+        console.error("Erro ao carregar módulo de Disparos:", err);
+    }
+    }
   } catch (err) {
     console.error("ERRO ao carregar módulos:", err);
   }
@@ -228,6 +240,12 @@ window.showTab = async function(tabId, clickedButton) {
         console.error("Erro escala:", error); 
     }
   }
+
+  if (tabId === 'tab-disparos-registros') {
+    if (typeof window.loadDisparosData === 'function') {
+        window.loadDisparosData();
+    }
+  }
 };
 
 // Funções globais do menu
@@ -267,6 +285,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(window.filterList) window.filterList(); 
             }
         });
+    }
+
+    if (document.getElementById("quick-disparo-data")) {
+    flatpickr("#quick-disparo-data", {
+        ...configPT,
+        // Opcional: permitir datas passadas para registros retroativos
+        defaultDate: "today" 
+    });
     }
     
     // 4. Inputs de Data nos Modais (Novo)
