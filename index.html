@@ -13,6 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <link rel="stylesheet" href="style.css">
@@ -683,24 +684,44 @@
                     </select>
 
                     <div class="sequence-panel-juridico">
-                    <button id="juridico-btn-next-call" class="action-step-btn-large" onclick="window.nextCallStageJuridico()">📞 Ligar</button>
-                    <button id="juridico-btn-next-template" class="action-step-btn-large" onclick="window.nextTemplateStageJuridico()">💬 Template</button>
-                    <p id="juridico-last-action-info" class="info-text"></p>
+                        <div style="display: flex; gap: 10px; width: 100%; margin-bottom: 10px;">
+                            <button id="juridico-btn-atendeu" class="action-step-btn-large" style="background-color: #28a745; color: white;" onclick="window.AtendimentoJuridico()">
+                                📞 ATENDEU
+                            </button>
+                            
+                            <button id="juridico-btn-next-template" class="action-step-btn-large" style="background-color: #007bff; color: white;" onclick="window.VerificadoJuridico()">
+                                ✅ VERIFICADO
+                            </button>
+                        </div>
+                        
+                        <button id="juridico-btn-next-call" class="action-step-btn-large" style="width: 100%; margin-bottom: 10px;" onclick="window.nextCallStageJuridico()">
+                            ⏳ TENTATIVA DE LIGAÇÃO
+                        </button>
+                        
+                        <p id="juridico-last-action-info" class="info-text" style="font-size: 12px; color: #666;"></p>
                     </div>
 
                     <div class="payment-panel-juridico">
-                    <h3>Registrar Pagamento</h3>
-                    <div class="payment-controls">
-                        <input type="date" id="juridico-payment-date">
-                        <select id="juridico-payment-origin">
-                        <option value="" disabled selected>Origem</option>
-                        <option value="Pagamento normal">Pagamento normal</option>
-                        <option value="Atendimento">Atendimento</option>
-                        <option value="Ligação">Ligação</option>
-                        <option value="Supervisão">Supervisão</option>
-                        </select>
-                        <button class="save-payment-btn" onclick="window.registerPaymentJuridico()">Baixar</button>
-                    </div>
+                        <h3>Registrar Pagamento</h3>
+                        
+                        <div id="juridico-course-selection" style="margin-bottom: 15px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                            <p style="font-size: 11px; font-weight: bold; margin-bottom: 10px; color: #6A1B9A; text-transform: uppercase;">Selecione o(s) curso(s) pago(s):</p>
+                            
+                            <div id="juridico-course-checkbox-list" class="pill-checkbox-group">
+                                </div>
+                        </div>
+
+                        <div class="payment-controls">
+                            <input type="date" id="juridico-payment-date">
+                            <select id="juridico-payment-origin">
+                                <option value="" disabled selected>Origem</option>
+                                <option value="Pagamento normal">Pagamento normal</option>
+                                <option value="Atendimento">Atendimento</option>
+                                <option value="Ligação">Ligação</option>
+                                <option value="Supervisão">Supervisão</option>
+                            </select>
+                            <button class="save-payment-btn" style="background-color: #6A1B9A;" onclick="window.registerPaymentJuridico()">Baixar</button>
+                        </div>
                     </div>
 
                 </div>
@@ -752,6 +773,7 @@
                             </button>
                         </div>
                         <div class="editor-quick-tools">
+                            <button onclick="window.openSpecialShiftConfigurator()" class="btn-action-secondary" style="background-color: #e67e22; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold;"><i class="fas fa-clock"></i> Horário Especial</button>
                             <button onclick="window.openFolgaConfigurator()" class="btn-tool-modern folga"><i class="fas fa-umbrella-beach"></i> Folga</button>
                             <button onclick="window.openHolidayConfigurator()" class="btn-tool-modern feriado"><i class="fas fa-star"></i> Feriados</button>
                             <button onclick="window.menuFerias()" class="btn-tool-modern ferias"><i class="fas fa-plane"></i> Férias</button>
