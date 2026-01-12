@@ -6,8 +6,6 @@ import {
 import { getCycleStage, ESCALA_CYCLE, NAME_MAPPING, normalizeText } from "./utils.js";
 
 const ESCALA_INDIVIDUAL_COLLECTION = "escala_individual"; // Nova coleção
-const SETTINGS_COLLECTION = "config_geral"; 
-const TEAM_DOC_ID = "equipe_cobranca";      
 
 // Estado local
 let currentYear = new Date().getFullYear();
@@ -65,26 +63,34 @@ const WEEKEND_ROWS = [
     { key: 'fds_12_18', label: '12h às 18h' }
 ];
 
-function renderNameWithRef(item, myNorm, normalize, highlightStyle = '') {
-    // Se não há referência (folga de feriado), retorna o nome simples
+function renderNameWithRef(item, myNorm, normalize, highlightStyle = '', cargoKey = '') {
     if (!item.ref) return item.nome;
 
     const isMe = myNorm && normalize(item.nome) === myNorm;
+    
+    // Identifica se a linha atual é de folga ou férias
+    const isLeave = ['folga', 'fds_folga', 'ferias'].includes(cargoKey);
 
-    // Estilo para o nome que possui referência
+    // SÓ mostra o relógio se NÃO for folga (ou seja, é horário de trabalho especial)
+    const symbol = !isLeave ? ' <i class="fas fa-clock-rotate-left" style="font-size:10px; color:#e67e22; margin-left:3px;"></i>' : '';
+
+    // Cores: Vermelho para folgas, Laranja para horários alterados
+    const color = isLeave ? '#c0392b' : '#e67e22';
+
     const style = `
         cursor: help;
-        border-bottom: 2px dotted #c0392b;
-        color: #c0392b;
+        border-bottom: 2px dotted ${color};
+        color: ${color};
         font-weight: 600;
         ${isMe ? highlightStyle : ''}
     `;
 
-    // Retorna a estrutura com o atributo de dados para o CSS
+    const tooltipText = isLeave ? `Folga ref. ao feriado de ${item.ref}` : item.ref;
+
     return `
-    <span class="tooltip-wrapper" data-tooltip="Folga ref. ao feriado de ${item.ref}">
+    <span class="tooltip-wrapper" data-tooltip="${tooltipText}">
         <span style="${style}">
-            ${item.nome}
+            ${item.nome}${symbol}
         </span>
     </span>
     `;
@@ -183,7 +189,6 @@ async function loadHolidaysGlobal() {
 }
 
 // 2. Calcula Folgas Pendentes (Busca Inteligente no Banco)
-// Substitua a função calculateYearlyCompOffs por esta versão AJUSTADA:
 
 async function calculateYearlyCompOffs() {
     const auditData = {}; 
@@ -242,14 +247,21 @@ async function calculateYearlyCompOffs() {
         const qFolgas = query(
             collection(db, "escala_individual"), 
             where("data", ">=", startYear), 
-            where("cargoKey", "==", "folga")
+            // Procura ambos os tipos de folga no banco
+            where("cargoKey", "in", ["folga", "fds_folga"]) 
         );
         const snapFolgas = await getDocs(qFolgas);
-        
+
         snapFolgas.forEach(doc => {
-            const nome = doc.data().nome;
-            if (auditData[nome]) {
-                auditData[nome].taken++; 
+            const d = doc.data();
+            
+            // REGRA DE OURO: 
+            // Se for folga de fim de semana (fds_folga), SÓ conta se tiver uma 'referencia'.
+            // As folgas de ciclo (automáticas) não possuem este campo e serão ignoradas.
+            const isValida = (d.cargoKey === 'folga') || (d.cargoKey === 'fds_folga' && d.referencia);
+
+            if (isValida && auditData[d.nome]) {
+                auditData[d.nome].taken++; 
             }
         });
 
@@ -348,37 +360,33 @@ function populateGridFromEvents() {
         // --- FILTRO DE FIM DE SEMANA ---
         // Se for a linha "FOLGA FDS", verificamos se a pessoa folga o fim de semana inteiro
         if (record.cargoKey === 'fds_folga') {
-            const [y, m, d] = record.data.split('-').map(Number);
-            const currentObj = new Date(y, m - 1, d);
-            const dayOfWeek = currentObj.getDay(); // 6=Sábado, 0=Domingo
+        const [y, m, d] = record.data.split('-').map(Number);
+        const currentObj = new Date(y, m - 1, d);
+        const dayOfWeek = currentObj.getDay();
 
-            if (dayOfWeek === 6) { // É Sábado
-                // Verifica se essa mesma pessoa tem folga no Domingo (dia seguinte)
-                const nextDay = new Date(y, m - 1, d + 1);
-                const nextDayISO = nextDay.toISOString().split('T')[0];
-                
-                const hasSundayOff = cachedEvents.some(e => 
-                    e.nome === record.nome && 
-                    e.data === nextDayISO && 
-                    e.cargoKey === 'fds_folga'
-                );
+        if (dayOfWeek === 6) { 
+            const nextDay = new Date(y, m - 1, d + 1);
+            const nextDayISO = nextDay.toISOString().split('T')[0];
+            
+            const hasSundayOff = cachedEvents.some(e => 
+                e.nome === record.nome && e.data === nextDayISO && e.cargoKey === 'fds_folga'
+            );
 
-                if (!hasSundayOff) shouldRender = false; // Se trabalha domingo, esconde a folga de sábado
+            // AJUSTE: Só esconde se não tiver Sunday Off E não for folga manual (referencia)
+            if (!hasSundayOff && !record.referencia) shouldRender = false;
 
-            } else if (dayOfWeek === 0) { // É Domingo
-                // Verifica se essa mesma pessoa teve folga no Sábado (dia anterior)
-                const prevDay = new Date(y, m - 1, d - 1);
-                const prevDayISO = prevDay.toISOString().split('T')[0];
+        } else if (dayOfWeek === 0) { 
+            const prevDay = new Date(y, m - 1, d - 1);
+            const prevDayISO = prevDay.toISOString().split('T')[0];
 
-                const hasSaturdayOff = cachedEvents.some(e => 
-                    e.nome === record.nome && 
-                    e.data === prevDayISO && 
-                    e.cargoKey === 'fds_folga'
-                );
+            const hasSaturdayOff = cachedEvents.some(e => 
+                e.nome === record.nome && e.data === prevDayISO && e.cargoKey === 'fds_folga'
+            );
 
-                if (!hasSaturdayOff) shouldRender = false; // Se trabalhou sábado, esconde a folga de domingo
-            }
+            // AJUSTE: Só esconde se não tiver Saturday Off E não for folga manual (referencia)
+            if (!hasSaturdayOff && !record.referencia) shouldRender = false;
         }
+    }
 
         // Se passou no filtro, adiciona ao mapa para desenhar
         if (shouldRender) {
@@ -917,8 +925,9 @@ async function loadEmployeeList() {
     listContainer.innerHTML = '<div style="padding:10px; color:#666; text-align:center;">Carregando equipe...</div>';
 
     try {
-        // 2. Busca Usuários
-        const q = query(collection(db, "users")); 
+        // 2. Busca Usuários - FILTRADO PARA PUXAR APENAS SETOR 'cobranca'
+        // Utilizamos "array-contains" pois o campo 'sectors' é um array no seu banco de dados
+        const q = query(collection(db, "users"), where("sectors", "array-contains", "cobranca")); 
         const querySnapshot = await getDocs(q);
         
         let fullEmployeeData = []; // Lista temporária com objetos completos
@@ -928,7 +937,7 @@ async function loadEmployeeList() {
             // Só adiciona se tiver Nome
             if (data.Nome && data.Nome.trim() !== "") {
                 fullEmployeeData.push({
-                    id: doc.id,          // Importante para o botão Editar
+                    id: doc.id,
                     Nome: data.Nome.trim(),
                     Cargo: data.Cargo || '',
                     Email: data.Email || '',
@@ -944,21 +953,20 @@ async function loadEmployeeList() {
         listContainer.innerHTML = ''; // Limpa o "Carregando..."
         
         if (fullEmployeeData.length === 0) {
-            listContainer.innerHTML = '<div style="padding:10px; color:#999;">Nenhum funcionário encontrado.</div>';
+            listContainer.innerHTML = '<div style="padding:10px; color:#999;">Nenhum funcionário de cobrança encontrado.</div>';
             return;
         }
 
         fullEmployeeData.forEach(user => {
             // Cria o elemento do Card
             const card = document.createElement('div');
-            card.className = 'employee-card'; // Classe do CSS que te mandei antes
+            card.className = 'employee-card';
             card.setAttribute('draggable', 'true');
             
-            // Monta o HTML interno (Nome, Cargo, Email, Botão Editar)
+            // Monta o HTML interno
             card.innerHTML = `
                 <div class="card-name">${user.Nome}</div>
                 <div class="card-detail"> ${user.Email || '-'}</div>
-                <button class="edit-btn" onclick="openUserEditor('${user.id}')" title="Editar">✎</button>
             `;
 
             // --- A MÁGICA DO ARRASTAR (DRAG & DROP) ---
@@ -985,93 +993,6 @@ async function loadEmployeeList() {
         console.error("Erro ao carregar equipe:", error);
         listContainer.innerHTML = '<div style="color:red; padding:10px;">Erro ao carregar lista.</div>';
     }
-}
-
-window.openUserEditor = async function(userId) {
-    const docRef = doc(db, "users", userId);
-    
-    // Mostra carregando...
-    Swal.showLoading();
-    const docSnap = await getDoc(docRef);
-    Swal.close();
-    
-    if (!docSnap.exists()) return;
-    const data = docSnap.data();
-
-    const { value: formValues } = await Swal.fire({
-        title: '✏️ Editar Funcionário',
-        html: `
-            <label style="display:block; text-align:left; font-size:12px; margin-top:10px;">Nome Completo</label>
-            <input id="swal-nome" class="swal2-input" value="${data.Nome || ''}">
-            
-            <label style="display:block; text-align:left; font-size:12px; margin-top:10px;">Email</label>
-            <input id="swal-email" class="swal2-input" value="${data.Email || ''}">
-            
-            <label style="display:block; text-align:left; font-size:12px; margin-top:10px;">Setor</label>
-            <input id="swal-setor" class="swal2-input" value="${data.Setor || ''}">
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: 'Salvar',
-        preConfirm: () => {
-            return {
-                Nome: document.getElementById('swal-nome').value,
-                Email: document.getElementById('swal-email').value,
-                Cargo: document.getElementById('swal-cargo').value,
-                Setor: document.getElementById('swal-setor').value
-            }
-        }
-    });
-
-    if (formValues) {
-        await updateDoc(docRef, formValues);
-        Swal.fire('Salvo!', 'Dados atualizados.', 'success');
-        loadEmployeeList(); // Recarrega a lista para mostrar as mudanças
-    }
-};
-
-// ------------------------------------------------------------------
-// RENDERIZAR BARRA LATERAL (Drag & Drop)
-// ------------------------------------------------------------------
-function renderEmployeeSidebar(container) {
-    container.innerHTML = ""; // Limpa lista atual
-
-    if (employeeList.length === 0) {
-        container.innerHTML = '<div style="padding:10px; font-size:12px;">Nenhum usuário encontrado.</div>';
-        return;
-    }
-
-    employeeList.forEach(name => {
-        // Cria o elemento visual ("Chip" ou "Etiqueta")
-        const chip = document.createElement("div");
-        
-        // Estilização básica caso não tenha CSS (pode ajustar no style.css)
-        chip.className = "employee-chip"; 
-        chip.style.padding = "8px 12px";
-        chip.style.margin = "5px 0";
-        chip.style.backgroundColor = "white";
-        chip.style.border = "1px solid #ddd";
-        chip.style.borderRadius = "4px";
-        chip.style.cursor = "grab";
-        chip.style.fontSize = "14px";
-        chip.style.boxShadow = "0 1px 2px rgba(0,0,0,0.05)";
-        
-        chip.innerText = name;
-        chip.draggable = true; // Permite arrastar
-
-        // Configura o evento de Arrastar (Drag)
-        chip.ondragstart = (ev) => {
-            ev.dataTransfer.setData("text/plain", name);
-            ev.dataTransfer.effectAllowed = "copy";
-            chip.style.opacity = "0.5"; // Feedback visual
-        };
-
-        chip.ondragend = () => {
-            chip.style.opacity = "1";
-        };
-
-        container.appendChild(chip);
-    });
 }
 
 // =========================================================
@@ -1135,7 +1056,7 @@ window.openCycleConfigurator = async function() {
     
     let usersOptions = "";
     try {
-        const q = query(collection(db, "users"));
+        const q = query(collection(db, "users"), where("sectors", "array-contains", "cobranca"));
         const snapshot = await getDocs(q);
         
         // Cria as opções do Dropdown ordenadas
@@ -1229,7 +1150,7 @@ window.openVacationConfigurator = async function() {
     
     let usersOptions = "";
     try {
-        const q = query(collection(db, "users"));
+        const q = query(collection(db, "users"), where("sectors", "array-contains", "cobranca"));
         const snapshot = await getDocs(q);
         const users = [];
         snapshot.forEach(doc => {
@@ -1608,31 +1529,43 @@ function generateStaticHTML(dates, rows, isWeekend, dataMap, myShortName) {
                 const fullWeekendOff = satData.filter(s => sunData.some(sun => sun.nome === s.nome));
                 
                 const formattedNames = fullWeekendOff.map(item =>
-                    renderNameWithRef(item, myNorm, normalize, 'my-name-highlight')
+                    // ADICIONE def.key como o 5º argumento aqui
+                    renderNameWithRef(item, myNorm, normalize, 'my-name-highlight', def.key)
                 ).join(' / ');
 
                 html += `<td colspan="2" class="cell-fds-folga-static">${formattedNames || '-'}</td>`;
             } else {
                 dates.forEach(d => {
-                    const iso = d.toISOString().split('T')[0];
-                    const key = `${iso}_${def.key}`;
-                    const rawData = dataMap[key] || [];
-                    const isToday = d.toDateString() === new Date().toDateString();
-                    const isFeriado = window.feriadosCache && window.feriadosCache[iso];
-                    
-                    // Verificação de Mês também nas células TD para garantir o efeito visual completo
-                    const isCurrentViewMonth = d.getMonth() === (currentMonth - 1);
+                const iso = d.toISOString().split('T')[0];
+                const key = `${iso}_${def.key}`;
+                let rawData = dataMap[key] || [];
+                const isToday = d.toDateString() === new Date().toDateString();
+                
+                // --- NOVA REGRA INJETADA: FERIADO PARCIAL SEMANA ---
+                const dayOfWeek = d.getDay(); // 1 (Seg) a 5 (Sex)
+                const feriado = window.feriadosCache && window.feriadosCache[iso];
+                const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
 
-                    let tdClass = isToday ? 'today-cell' : '';
-                    if (isFeriado) tdClass += ' cell-feriado';
-                    if (!isCurrentViewMonth) tdClass += ' month-fade'; // Aplica fade na célula
+                if (feriado && feriado.tipo === 'PARCIAL' && isWeekday && def.key === 'atend_14_20') {
+                    rawData = rawData.map(item => ({
+                        ...item,
+                        ref: item.ref || "12h às 18h" // Injeta o horário se não houver referência manual
+                    }));
+                }
+                // --------------------------------------------------
 
-                    const displayNames = rawData.map(item =>
-                        renderNameWithRef(item, myNorm, normalize, 'my-name-highlight')
-                    ).join(' / ');
-                    
-                    html += `<td class="${tdClass}">${displayNames || ''}</td>`;
-                });
+                const isCurrentViewMonth = d.getMonth() === (currentMonth - 1);
+                let tdClass = isToday ? 'today-cell' : '';
+                if (feriado) tdClass += ' cell-feriado';
+                if (!isCurrentViewMonth) tdClass += ' month-fade';
+
+                // Chama a função de desenho passando o def.key (importante para o ícone)
+                const displayNames = rawData.map(item =>
+                    renderNameWithRef(item, myNorm, normalize, 'my-name-highlight', def.key)
+                ).join(' / ');
+                
+                html += `<td class="${tdClass}">${displayNames || ''}</td>`;
+            });
             }
             html += `</tr>`;
         }
@@ -1641,8 +1574,10 @@ function generateStaticHTML(dates, rows, isWeekend, dataMap, myShortName) {
     return html;
 }
 
+// js/escala.js
+
 window.openAbsenceConfigurator = async function(type = 'FOLGA') {
-    // ... (Identificação do período visível - mantido)
+    // 1. Identificação do período visível (ex: "2026-04")
     const monthLabelEl = document.getElementById('escala-month-label');
     const monthYearText = monthLabelEl?.textContent || ""; 
     const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -1651,69 +1586,88 @@ window.openAbsenceConfigurator = async function(type = 'FOLGA') {
     const viewYear = parts[1];
     const viewedPeriod = `${viewYear}-${String(viewMonthIdx + 1).padStart(2, '0')}`;
 
+    // 2. Filtra a lista de usuários (Apenas Cobrança)
     let allUsers = [];
     try {
-        const q = query(collection(db, "users"));
+        const q = query(collection(db, "users"), where("sectors", "array-contains", "cobranca"));
         const snapshot = await getDocs(q);
         snapshot.forEach(doc => { if (doc.data().Nome) allUsers.push(doc.data().Nome); });
         allUsers.sort();
-    } catch (e) { console.error(e); return; }
+    } catch (e) { console.error("Erro ao carregar usuários:", e); return; }
 
-    // Objeto para guardar as DATAS específicas de cada um
     let userDetailsMap = {}; 
 
     if (type === 'FOLGA') {
+        // A. Identifica quais feriados existem neste mês
         const holidayDates = Object.keys(window.feriadosCache || {}).filter(d => d.startsWith(viewedPeriod));
         
-        // Busca o que foi trabalhado no mês
+        if (holidayDates.length === 0) {
+            return Swal.fire("Informação", `Não existem feriados configurados para ${parts[0]}.`, "info");
+        }
+
+        // B. Busca quem TRABALHOU nestes feriados específicos
         const qWork = query(collection(db, "escala_individual"), where("data", "in", holidayDates));
-        const snap = await getDocs(qWork);
+        const snapWork = await getDocs(qWork);
         
-        snap.forEach(doc => {
+        snapWork.forEach(doc => {
             const d = doc.data();
+            // Verifica se não é uma folga já registrada na linha do feriado
             let isValidWork = !['folga', 'ferias', 'fds_folga'].includes(d.cargoKey);
-            const dateObj = new Date(d.data + 'T12:00:00');
-            if ((dateObj.getDay() === 0 || dateObj.getDay() === 6)) {
-                const profile = EMPLOYEE_PROFILES[d.nome] || EMPLOYEE_PROFILES[Object.entries(NAME_MAPPING).find(([k,v]) => k === d.nome)?.[1]];
-                if (profile && profile.startsWith('FIXO_')) isValidWork = false;
-            }
             if (isValidWork) {
                 if (!userDetailsMap[d.nome]) userDetailsMap[d.nome] = { worked: [], taken: 0 };
-                userDetailsMap[d.nome].worked.push({ date: d.data, reason: window.feriadosCache[d.data].nome });
+                userDetailsMap[d.nome].worked.push({ 
+                    date: d.data, 
+                    reason: window.feriadosCache[d.data].nome 
+                });
             }
         });
 
-        // Subtrai folgas já tiradas
+        // C. Busca folgas tiradas NESTE MÊS que compensam feriados DESTE MÊS
         const qFolgas = query(collection(db, "escala_individual"), 
-            where("data", ">=", `${viewedPeriod}-01`), where("data", "<=", `${viewedPeriod}-31`), 
-            where("cargoKey", "==", "folga")
+            where("data", ">=", `${viewedPeriod}-01`), 
+            where("data", "<=", `${viewedPeriod}-31`), 
+            where("cargoKey", "in", ["folga", "fds_folga"])
         );
         const snapFolgas = await getDocs(qFolgas);
+        
         snapFolgas.forEach(doc => {
-            const nome = doc.data().nome;
-            if (userDetailsMap[nome]) userDetailsMap[nome].taken++;
+            const d = doc.data();
+            if (userDetailsMap[d.nome]) {
+                // SÓ conta como 'taken' se a referência da folga mencionar um dia deste mês
+                const isFromThisMonth = holidayDates.some(hDate => {
+                    const [y, m, day] = hDate.split('-');
+                    return d.referencia && d.referencia.includes(`${day}/${m}`);
+                });
+
+                if (isFromThisMonth) {
+                    userDetailsMap[d.nome].taken++;
+                }
+            }
         });
     }
 
+    // 3. Filtra apenas quem tem saldo pendente do mês
     const usersWithBalance = allUsers.filter(u => {
         const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === u)?.[0] || u.split(' ')[0];
         return type === 'FERIAS' || (userDetailsMap[short] && (userDetailsMap[short].worked.length - userDetailsMap[short].taken) > 0);
     });
 
-    if (type === 'FOLGA' && usersWithBalance.length === 0) return Swal.fire("Tudo certo!", `Sem folgas pendentes em ${parts[0]}.`, "success");
+    if (type === 'FOLGA' && usersWithBalance.length === 0) {
+        return Swal.fire("Tudo certo!", `Sem folgas pendentes referentes aos feriados de ${parts[0]}.`, "success");
+    }
 
-    const usersOptions = usersWithBalance.map(u => `<option value="${u}">${u}</option>`).join('');
-
+    // 4. Modal Visual com Flatpickr (Intervalo para Férias / Único para Folga)
     const { value: formValues } = await Swal.fire({
         title: type === 'FOLGA' ? '🏖️ Registrar Folga' : '✈️ Registrar Férias',
         html: `
             <div class="swal-modern-form">
                 <div class="swal-input-group">
                     <label class="swal-custom-label">Colaborador</label>
-                    <select id="abs-name" class="swal-custom-input">${usersOptions}</select>
+                    <select id="abs-name" class="swal-custom-input">
+                        ${usersWithBalance.map(u => `<option value="${u}">${u}</option>`).join('')}
+                    </select>
                 </div>
-                <div id="absence-info-box" style="margin-bottom:15px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:12px; border-left:4px solid #3498db; display:none;">
-                    </div>
+                <div id="absence-info-box" style="margin-bottom:15px; padding:10px; background:#f8f9fa; border-radius:8px; font-size:12px; border-left:4px solid #3498db; display:none;"></div>
                 <div class="swal-input-group">
                     <label class="swal-custom-label">Data</label>
                     <input type="text" id="abs-start" class="swal-custom-input" placeholder="Selecione a data">
@@ -1723,7 +1677,7 @@ window.openAbsenceConfigurator = async function(type = 'FOLGA') {
         didOpen: () => {
             const nameSelect = document.getElementById('abs-name');
             const infoBox = document.getElementById('absence-info-box');
-
+            
             const updateInfo = () => {
                 const fullName = nameSelect.value;
                 const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === fullName)?.[0] || fullName.split(' ')[0];
@@ -1731,63 +1685,63 @@ window.openAbsenceConfigurator = async function(type = 'FOLGA') {
                 
                 if (type === 'FOLGA' && data) {
                     const balance = data.worked.length - data.taken;
-                    const pendingDates = data.worked.map(w => `• ${w.date.split('-')[2]}/${w.date.split('-')[1]} (${w.reason})`).join('<br>');
-                    infoBox.innerHTML = `<strong>Pendências (${balance}):</strong><br>${pendingDates}`;
+                    const pendingDates = data.worked.slice(data.taken).map(w => `• ${w.date.split('-')[2]}/${w.date.split('-')[1]} (${w.reason})`).join('<br>');
+                    infoBox.innerHTML = `<strong>Pendências de ${parts[0]} (${balance}):</strong><br>${pendingDates}`;
                     infoBox.style.display = 'block';
-                } else {
-                    infoBox.style.display = 'none';
-                }
+                } else { infoBox.style.display = 'none'; }
             };
 
             nameSelect.onchange = updateInfo;
             updateInfo();
-
-            flatpickr("#abs-start", { dateFormat: "Y-m-d", altInput: true, altFormat: "d/m/Y", locale: "pt" });
+            flatpickr("#abs-start", { mode: type === 'FERIAS' ? "range" : "single", dateFormat: "Y-m-d", altInput: true, altFormat: "d/m/Y", locale: "pt" });
         },
         preConfirm: () => {
             const fullName = document.getElementById('abs-name').value;
             const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === fullName)?.[0] || fullName.split(' ')[0];
             const data = userDetailsMap[short];
             
-            // Pega o feriado mais antigo disponível para vincular
             let ref = null;
             if (type === 'FOLGA' && data) {
-                ref = data.worked[data.taken]?.reason || "Feriado Trabalhado";
+                // Pega o próximo feriado do mês para compensar
+                const holiday = data.worked[data.taken];
+                if (holiday) {
+                    const [y, m, d] = holiday.date.split('-');
+                    ref = `${holiday.reason} no dia ${d}/${m}`; // SALVA COM A DATA
+                }
             }
 
-            return {
-                nome: fullName,
-                shortName: short,
-                start: document.getElementById('abs-start').value,
-                referencia: ref
-            };
+            return { shortName: short, start: document.getElementById('abs-start').value, referencia: ref };
         }
     });
 
     if (!formValues || !formValues.start) return;
 
-    // DEFINIÇÃO DA VARIÁVEL FALTANTE PARA O ID E O TIPO
-    const typeKey = type === 'FOLGA' ? 'folga' : 'ferias';
-
+    // 5. Gravação em Batch (Limpando o trabalho anterior)
     let batch = writeBatch(db);
-    const docId = `${formValues.start}_${normalizeText(formValues.shortName).replace(/\s/g, '')}_${typeKey}`;
-    
-    const dataToSave = {
-        data: formValues.start,
-        nome: formValues.shortName,
-        cargoKey: typeKey,
-        updatedAt: serverTimestamp()
-    };
+    const dates = formValues.start.split(" até ");
+    let cursor = new Date(dates[0] + 'T12:00:00');
+    let end = dates[1] ? new Date(dates[1] + 'T12:00:00') : new Date(dates[0] + 'T12:00:00');
 
-    // Só adiciona o vínculo se for FOLGA e houver uma referência calculada
-    if (type === 'FOLGA' && formValues.referencia) {
-        dataToSave.referencia = formValues.referencia;
+    while (cursor <= end) {
+        const dateISO = cursor.toISOString().split('T')[0];
+        const dayOfWeek = cursor.getDay();
+        const targetKey = (dayOfWeek === 0 || dayOfWeek === 6) ? 'fds_folga' : (type === 'FOLGA' ? 'folga' : 'ferias');
+        const normName = normalizeText(formValues.shortName).replace(/\s/g, '');
+
+        batch.delete(doc(db, "escala_individual", `${dateISO}_${normName}`));
+        batch.set(doc(db, "escala_individual", `${dateISO}_${normName}_${type === 'FOLGA' ? 'folga' : 'ferias'}`), {
+            data: dateISO,
+            nome: formValues.shortName,
+            cargoKey: targetKey,
+            referencia: formValues.referencia, // Motivo formatado com data
+            updatedAt: serverTimestamp()
+        });
+
+        cursor.setDate(cursor.getDate() + 1);
     }
 
-    batch.set(doc(db, "escala_individual", docId), dataToSave);
-
     await batch.commit();
-    Swal.fire("Sucesso!", "Folga registrada e vinculada.", "success");
+    Swal.fire("Sucesso!", "Registro atualizado.", "success");
     loadEscala();
 };
 
@@ -1934,8 +1888,8 @@ function checkHolidayCompOffs() {
             auditData[name] = { worked: [], taken: 0 };
         }
 
+        // 1. Contabiliza Feriados Trabalhados
         if (window.feriadosCache && window.feriadosCache[dateISO]) {
-            // --- NOVA REGRA: IGNORAR SUPERVISORAS EM FINAL DE SEMANA ---
             const dateObj = new Date(dateISO + 'T12:00:00'); 
             const dayOfWeek = dateObj.getDay(); 
             const fullName = Object.entries(NAME_MAPPING).find(([k,v]) => k === name)?.[1] || name;
@@ -1944,7 +1898,7 @@ function checkHolidayCompOffs() {
             const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
             const isFixedRole = profile && profile.startsWith('FIXO_');
 
-            // Só conta se NÃO for (Fim de Semana + Cargo Fixo)
+            // Só gera crédito se NÃO for (Fim de Semana + Cargo Fixo)
             if (!(isWeekend && isFixedRole)) {
                 if (event.cargoKey !== 'folga' && event.cargoKey !== 'ferias' && event.cargoKey !== 'fds_folga') {
                     auditData[name].worked.push({
@@ -1953,10 +1907,13 @@ function checkHolidayCompOffs() {
                     });
                 }
             }
-            // -----------------------------------------------------------
         }
 
-        if (event.cargoKey === 'folga') {
+        // 2. Contabiliza Folgas Tiradas (Abate do Saldo)
+        const countsAsTaken = (event.cargoKey === 'folga') || 
+                              (event.cargoKey === 'fds_folga' && event.referencia);
+
+        if (countsAsTaken) {
             auditData[name].taken++;
         }
     });
@@ -1981,6 +1938,306 @@ function changeViewMonth(delta) {
     loadReadOnlyView();
 }
 
+window.menuFolga = function() {
+    Swal.fire({
+        title: 'Opções de Folga',
+        html: `
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+                <button id="btn-folga-auto" class="swal2-confirm swal2-styled" style="background-color: #2980b9; margin: 0;">🏖️ FERIADOS</button>
+                <button id="btn-folga-manual" class="swal2-deny swal2-styled" style="background-color: #8e44ad; margin: 0;">📝 MANUAL</button>
+                <hr style="margin: 10px 0;">
+                <button id="btn-folga-manager" class="swal2-confirm swal2-styled" style="background-color: #2c3e50; margin: 0;">⚙️ Gerenciar Folgas</button>
+            </div>
+        `,
+        showConfirmButton: false,
+        showCancelButton: true,
+        cancelButtonText: 'Fechar',
+        didOpen: () => {
+            document.getElementById('btn-folga-auto').onclick = () => { Swal.close(); window.openAbsenceConfigurator('FOLGA'); };
+            document.getElementById('btn-folga-manual').onclick = () => { Swal.close(); window.openManualFolga(); };
+            document.getElementById('btn-folga-manager').onclick = () => { Swal.close(); window.openFolgaManager(); };
+        }
+    });
+};
+
+window.openFolgaManager = async function() {
+    if(window.showToast) window.showToast("Carregando histórico de folgas...", "info");
+
+    try {
+        // Busca todas as folgas do ano
+        const startYear = `${new Date().getFullYear()}-01-01`;
+        const q = query(
+            collection(db, "escala_individual"), 
+            where("data", ">=", startYear),
+            where("cargoKey", "in", ["folga", "fds_folga"]),
+            orderBy("data", "desc")
+        );
+        
+        const snapshot = await getDocs(q);
+        
+        let listHtml = `<div style="max-height: 400px; overflow-y: auto; text-align: left; border: 1px solid #eee; border-radius: 8px; padding: 10px;">`;
+
+        let count = 0;
+        snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            // FILTRO CRÍTICO: Só mostra se tiver referência (Feriado ou Manual)
+            if (data.referencia) {
+                count++;
+                const dataFormatada = data.data.split('-').reverse().join('/');
+                listHtml += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f5f5f5;">
+                        <div style="flex: 1;">
+                            <strong style="display:block; font-size: 14px;">${data.nome}</strong>
+                            <span style="font-size: 12px; color: #c0392b; font-weight: bold;">${data.referencia}</span>
+                            <span style="font-size: 11px; color: #666; display: block;">Data da Folga: ${dataFormatada}</span>
+                        </div>
+                        <button onclick="window.deleteFolgaRecord('${docSnap.id}', '${data.nome}', '${dataFormatada}')" 
+                                style="background: #ff7675; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-left: 10px;">
+                            Excluir
+                        </button>
+                    </div>
+                `;
+            }
+        });
+
+        if (count === 0) {
+            listHtml += `<p style="color:#666; text-align:center; padding: 20px;">Nenhuma folga com referência encontrada.</p>`;
+        }
+        
+        listHtml += `</div>`;
+
+        Swal.fire({
+            title: '⚙️ Gerenciar Folgas',
+            html: listHtml,
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Voltar',
+            width: '500px'
+        });
+
+    } catch (e) {
+        console.error("Erro ao gerenciar folgas:", e);
+        Swal.fire("Erro", "Não foi possível carregar as folgas.", "error");
+    }
+};
+
+window.deleteFolgaRecord = async function(docId, nome, dataStr) {
+    const confirm = await Swal.fire({
+        title: 'Remover Folga?',
+        text: `Deseja excluir a folga de ${nome} no dia ${dataStr}?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sim, excluir'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        await deleteDoc(doc(db, "escala_individual", docId));
+        
+        if(window.showToast) window.showToast("Folga removida!", "success");
+        
+        // Recarrega a escala e o gerenciador para atualizar a lista
+        await loadEscala();
+        window.openFolgaManager(); 
+
+    } catch (e) {
+        console.error("Erro ao excluir folga:", e);
+        Swal.fire("Erro", "Falha ao remover registro.", "error");
+    }
+};
+
+// 2. Modal de Folga Manual
+window.openManualFolga = async function() {
+    // 1. Busca lista de usuários para o select
+    let allUsers = [];
+    try {
+        const q = query(collection(db, "users"), where("sectors", "array-contains", "cobranca"));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => { if (doc.data().Nome) allUsers.push(doc.data().Nome); });
+        allUsers.sort();
+    } catch (e) { console.error(e); return; }
+
+    const usersOptions = allUsers.map(u => `<option value="${u}">${u}</option>`).join('');
+
+    // 2. Interface do Modal
+    const { value: formValues } = await Swal.fire({
+        title: '📝 Folga Manual',
+        html: `
+            <div class="swal-modern-form">
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Colaborador</label>
+                    <select id="man-name" class="swal-custom-input">${usersOptions}</select>
+                </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Data ou Intervalo</label>
+                    <input type="text" id="man-range" class="swal-custom-input" placeholder="Selecione o período">
+                </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Motivo</label>
+                    <select id="man-reason" class="swal-custom-input">
+                        <option value="Aniversário">Aniversário</option>
+                        <option value="Banco de horas">Banco de horas</option>
+                        <option value="Atestado">Atestado</option>
+                    </select>
+                </div>
+            </div>
+        `,
+        didOpen: () => {
+            flatpickr("#man-range", {
+                mode: "range",
+                dateFormat: "Y-m-d",
+                altInput: true,
+                altFormat: "d/m/Y",
+                locale: "pt"
+            });
+        },
+        preConfirm: () => {
+            const fullName = document.getElementById('man-name').value;
+            const short = Object.entries(NAME_MAPPING).find(([k,v]) => v === fullName)?.[0] || fullName.split(' ')[0];
+            return {
+                nome: fullName,
+                shortName: short,
+                range: document.getElementById('man-range').value,
+                motivo: document.getElementById('man-reason').value || "Folga Manual"
+            };
+        }
+    });
+
+    if (!formValues || !formValues.range) return;
+
+    // 3. Processamento das datas (Ajuste de fuso horário)
+    const dates = formValues.range.split(" até ");
+    let start = new Date(dates[0] + 'T12:00:00');
+    let end = dates[1] ? new Date(dates[1] + 'T12:00:00') : new Date(dates[0] + 'T12:00:00');
+
+    let batch = writeBatch(db);
+    let cursor = new Date(start);
+
+    // 4. Loop de Gravação e Limpeza
+    while (cursor <= end) {
+        const dateISO = cursor.toISOString().split('T')[0];
+        const dayOfWeek = cursor.getDay(); // 0=Domingo, 6=Sábado
+        const normName = normalizeText(formValues.shortName).replace(/\s/g, '');
+
+        // CORREÇÃO 1: Direciona para a linha de FDS se for sábado ou domingo
+        const targetKey = (dayOfWeek === 0 || dayOfWeek === 6) ? 'fds_folga' : 'folga';
+
+        // CORREÇÃO 2: Define IDs para deletar o trabalho e criar a folga
+        // ID padrão usado na automação (addToBatch)
+        const workDocId = `${dateISO}_${normName}`; 
+        // ID específico da folga manual para evitar conflitos
+        const folgaDocId = `${dateISO}_${normName}_folga`; 
+
+        // REMOVE o registro de trabalho (se existir) para o colaborador sair da linha de horários
+        batch.delete(doc(db, ESCALA_INDIVIDUAL_COLLECTION, workDocId));
+
+        // ADICIONA a folga na linha correta com o motivo para a tooltip
+        batch.set(doc(db, ESCALA_INDIVIDUAL_COLLECTION, folgaDocId), {
+            data: dateISO,
+            nome: formValues.shortName,
+            cargoKey: targetKey,
+            referencia: formValues.motivo, 
+            updatedAt: serverTimestamp()
+        });
+
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    await batch.commit();
+    Swal.fire("Sucesso!", "Folga(s) registrada(s) e escala atualizada.", "success");
+    loadEscala(); // Recarrega o grid visual
+};
+
+// js/escala.js
+
+window.openSpecialShiftConfigurator = async function() {
+    // 1. Filtra apenas as supervisoras da lista de perfis
+    const supervisoras = Object.entries(EMPLOYEE_PROFILES)
+        .filter(([name, profile]) => profile.includes('SUPERVISOR'))
+        .map(([name]) => name);
+
+    const { value: formValues } = await Swal.fire({
+        title: '🕒 Horário Especial / Exceção',
+        html: `
+            <div class="swal-modern-form">
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Supervisora</label>
+                    <select id="spec-name" class="swal-custom-input">
+                        ${supervisoras.map(s => `<option value="${s}">${s}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Data do Ajuste</label>
+                    <input type="date" id="spec-date" class="swal-custom-input">
+                </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Novo Horário (Linha da Tabela)</label>
+                    <select id="spec-row" class="swal-custom-input">
+                        <option value="atend_08_14">08h às 14h</option>
+                        <option value="atend_08_16">08h às 16h</option>
+                        <option value="supervisor1">08h às 17h (Sup 1)</option>
+                        <option value="supervisor2">11h às 20h (Sup 2)</option>
+                        <option value="atend_12_20">12h às 20h</option>
+                        <option value="atend_14_20">14h às 20h</option>
+                    </select>
+                </div>
+                <div class="swal-input-group">
+                    <label class="swal-custom-label">Motivo (Aparecerá no Tooltip)</label>
+                    <input type="text" id="spec-note" class="swal-custom-input" placeholder="Ex: Cobertura de evento / Treinamento">
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar Mudança',
+        preConfirm: () => {
+            const rowSelect = document.getElementById('spec-row');
+            const horarioTexto = rowSelect.options[rowSelect.selectedIndex].text;
+            const motivo = document.getElementById('spec-note').value;
+
+            return {
+                nome: document.getElementById('spec-name').value,
+                data: document.getElementById('spec-date').value,
+                cargoKey: rowSelect.value,
+                // Salva apenas o novo horário e o motivo (Ex: "08h às 14h - Treinamento")
+                referencia: `${horarioTexto}${motivo ? ' - ' + motivo : ''}`
+            }
+        }
+    });
+
+    if (!formValues || !formValues.data) return;
+
+    try {
+        let batch = writeBatch(db);
+        const normName = normalizeText(formValues.nome).replace(/\s/g, '');
+        const dateISO = formValues.data;
+
+        // 1. Limpa o horário padrão dela naquele dia para não duplicar
+        const workDocId = `${dateISO}_${normName}`;
+        batch.delete(doc(db, ESCALA_INDIVIDUAL_COLLECTION, workDocId));
+
+        // 2. Salva o novo horário com a referência (Tooltip)
+        // Usamos um ID que identifica que é uma troca de horário
+        const specialDocId = `${dateISO}_${normName}_troca`;
+        
+        batch.set(doc(db, ESCALA_INDIVIDUAL_COLLECTION, specialDocId), {
+            data: dateISO,
+            nome: formValues.nome,
+            cargoKey: formValues.cargoKey,
+            referencia: formValues.nota, // O segredo do tooltip está aqui
+            updatedAt: serverTimestamp()
+        });
+
+        await batch.commit();
+        Swal.fire("Sucesso!", "Horário especial configurado com tooltip.", "success");
+        loadEscala(); // Recarrega o grid
+    } catch (e) {
+        console.error(e);
+        Swal.fire("Erro", "Não foi possível salvar a alteração.", "error");
+    }
+};
+
 // =========================================================
 // EXPORTAÇÕES GLOBAIS
 // =========================================================
@@ -1993,5 +2250,8 @@ window.openVacationConfigurator = openVacationConfigurator;
 window.loadReadOnlyView = loadReadOnlyView;
 window.changeViewMonth = changeViewMonth;
 window.openVacationConfigurator = () => window.openAbsenceConfigurator('FERIAS');
-window.openFolgaConfigurator = () => window.openAbsenceConfigurator('FOLGA');
+window.openFolgaConfigurator = window.menuFolga;
 window.menuFerias = menuFerias;
+window.openManualFolga = openManualFolga;
+window.openFolgaManager = openFolgaManager;
+window.openSpecialShiftConfigurator = openSpecialShiftConfigurator;

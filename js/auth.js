@@ -1,5 +1,5 @@
 // js/auth.js
-import { auth } from "./firebase.js";
+import { auth, db } from "./firebase.js";
 import { 
     signOut, 
     onAuthStateChanged, 
@@ -9,66 +9,94 @@ import {
     signInWithPopup 
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-const provider = new GoogleAuthProvider();
-const ALLOWED_DOMAINS = ['@grupomedcof.com.br', '@medcof.com.br'];
+// Importações para consulta ao Firestore
+import { 
+    collection, 
+    query, 
+    where, 
+    getDocs 
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// 1. PERSISTÊNCIA: Faz o Firebase "lembrar" do usuário para sempre neste navegador
+const provider = new GoogleAuthProvider();
+
+// 1. PERSISTÊNCIA
 setPersistence(auth, browserLocalPersistence);
 
-// 2. FUNÇÃO DE LOGIN (Popup rápido apenas no 1º acesso)
+// 2. LOGIN
 window.loginWithGoogle = async function() {
     const btn = document.getElementById("google-btn");
-    const loader = btn?.querySelector(".btn-loader");
-
     if (auth.currentUser) return;
-
     if (btn) btn.classList.add("is-loading");
-    if (loader) loader.classList.remove("hidden");
 
     try {
         await signInWithPopup(auth, provider);
-        localStorage.setItem("SESSION_ACTIVE_FLAG", "true");
-        // O onAuthStateChanged abaixo cuidará da transição suave
     } catch (error) {
         console.error("Erro no login:", error);
         if (btn) btn.classList.remove("is-loading");
-        if (loader) loader.classList.add("hidden");
     }
 };
 
-// 3. O MONITOR "APOLLO": Ele decide o que mostrar sem recarregar a página
+// 3. MONITOR DE SEGURANÇA (WHITELIST NA COLEÇÃO 'USERS')
 onAuthStateChanged(auth, async (user) => {
     const loginScreen = document.getElementById("login-screen");
     const appContent = document.getElementById("app-content");
 
     if (user) {
-        // Validação de segurança
-        const email = user.email || "";
-        const isAllowedDomain = ALLOWED_DOMAINS.some(domain => email.endsWith(domain));
+        try {
+            // Consulta à coleção 'users' pelo e-mail
+            const q = query(collection(db, "users"), where("Email", "==", user.email));
+            const querySnapshot = await getDocs(q);
 
-        if (!isAllowedDomain) {
+            // Bloqueio se o e-mail não estiver na lista
+            if (querySnapshot.empty) {
+                throw new Error("Utilizador não autorizado. Contacte o administrador.");
+            }
+
+            const userData = querySnapshot.docs[0].data();
+
+            if (userData.status !== "ativo" && userData.status !== true) {
+                throw new Error("A sua conta está inativa. Acesso negado.");
+            }
+
+            // Define permissões de Admin na interface
+            if (userData.role === 'admin') {
+                document.body.classList.add('is-admin');
+            } else {
+                document.body.classList.remove('is-admin');
+            }
+
+            localStorage.setItem("SESSION_ACTIVE_FLAG", "true");
+            if (loginScreen) loginScreen.style.display = "none";
+            if (appContent) {
+                appContent.style.display = "block";
+                appContent.classList.add("fade-in");
+            }
+
+            setupActivityListeners();
+            resetInactivityTimer();
+
+        } catch (error) {
+            console.error("Erro de Autenticação:", error.message);
+            
+            if (window.Swal) {
+                await Swal.fire({ icon: 'error', title: 'Acesso Negado', text: error.message });
+            } else {
+                alert(error.message);
+            }
+
+            // Expulsa o utilizador não autorizado
             await signOut(auth);
             localStorage.removeItem("SESSION_ACTIVE_FLAG");
-            return;
+            window.location.reload();
         }
-
-        // ACESSO DIRETO: Se o usuário já está logado, 
-        // o login screen nem chega a aparecer para ele
-        localStorage.setItem("SESSION_ACTIVE_FLAG", "true");
-        
-        if (loginScreen) loginScreen.classList.remove("fade-in");
-        if (appContent) appContent.classList.add("fade-in");
-
-        setupActivityListeners();
-        resetInactivityTimer();
     } else {
-        // Se não houver usuário, mostra a tela de login suavemente
-        if (appContent) appContent.classList.remove("fade-in");
-        if (loginScreen) loginScreen.classList.add("fade-in");
+        if (appContent) appContent.style.display = "none";
+        if (loginScreen) loginScreen.style.display = "flex";
+        document.body.classList.remove('is-admin');
     }
 });
 
-// --- MOTOR DE INATIVIDADE (MANTIDO) ---
+// --- MOTOR DE INATIVIDADE ---
 let inactivityTimer;
 const INACTIVITY_LIMIT = 30 * 60 * 1000; 
 
